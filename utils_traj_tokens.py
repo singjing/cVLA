@@ -609,7 +609,7 @@ class TrajectoryEncoder_xyzrotvec2:
         for x in loc_numbers[2::self.num_tokens]:
             x_c = np.clip(x, self.DEPTH_TOKENS_START, self.DEPTH_TOKENS_END)
             if x_c != x:
-                print("Warning: decoded depth out of range.", x)
+                print(f"Warning: depth token was {x} range was [{self.DEPTH_TOKENS_START}, {self.DEPTH_TOKENS_END}]")
 
             depth_int = x_c - self.DEPTH_TOKENS_START
             if self.DEPTH_SCALE:

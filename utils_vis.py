@@ -125,6 +125,12 @@ def render_example(image, label, prediction: str=None, camera=None, enc=None, en
     Render an example image to HTML, e.g., for use in notebooks.
     Arguments:
         image: rgb array or (depth, rgb) tuple
+        label: the suffix to be predicted
+        prediction: the model prediction
+        camera: the camera used to record the image
+        enc: the default encoder used to decode the both label and prediction
+        enc_pred: the encoder that overwrites the default encoder for the prediction
+        text: the prefix
     """
 
     enc_label = enc
@@ -143,20 +149,28 @@ def render_example(image, label, prediction: str=None, camera=None, enc=None, en
         raise ValueError(f"image was {type(image)}")
         
     if camera is None:
+        print("Warning: getting standard camera")
         camera = get_standard_camera(image_width, image_height)
 
     # logic for when to draw coords
+    draw_state_coords = True
     draw_pred_coords = True
     draw_label_coords = False
     if prediction is not None:
         draw_label_coords = False
-    
+
     plot_width, plot_height = 448, 448
+
     dpi = 100
     figsize = (plot_width / dpi, plot_height / dpi)
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
     ax.imshow(image)
     ax.axis('off')
+
+    if draw_state_coords:
+        robot_state = text.split(" ")[-1]
+        draw_coordinate_frame(robot_state, camera, enc_label, ax)        
+        
     try:
         curve_25d, quat_c = enc_label.decode_caption(label, camera) 
         curve_2d  = curve_25d[:, :2]
