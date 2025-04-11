@@ -5,6 +5,7 @@ import random
 import argparse
 import subprocess
 import numpy as np
+import json
 
 from pathlib import Path
 from datetime import datetime
@@ -12,10 +13,9 @@ from torchvision import transforms
 from scipy.spatial.transform import Rotation as R
 from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration, Seq2SeqTrainingArguments, Seq2SeqTrainer, GenerationConfig, AutoProcessor, AutoModelForCausalLM
 
-from data_loader_images import ImageFolderDataset
 from data_loader_h5 import H5Dataset
+from data_loader_images import ImageFolderDataset
 from data_loader_paired import PairedDataset
-from utils_traj_tokens import TrajectoryEncoder_xyzrotvec2
 from data_augmentations import augment_image_rgb, RandomizeBackgrounds, complexify_text
 
 
@@ -40,6 +40,8 @@ def get_collate_fn(processor, num_images_in_context, image_order, TORCH_DTYPE, a
     def collate_fn(batch):
         images, labels = zip(*batch)        # images will be lists of lists since one batch input has multiple images
         if args.conditioning == "trajectory":
+            if args.depth:
+                raise NotImplementedError("Depth not implemented for trajectory conditioning")
             prefixes, suffixes = [], []
             for i in range(len(labels)):
                 tmp_prefix = ""
@@ -58,10 +60,15 @@ def get_collate_fn(processor, num_images_in_context, image_order, TORCH_DTYPE, a
             
             images_flat = [image for images_list in images for image in images_list]
         else:
-            prefixes = ["<image>" + label["prefix"] for label in labels]
-            suffixes = [label["suffix"] for label in labels]
-            images_flat = images
-
+            if not args.depth:    
+                prefixes = ["<image>" + label["prefix"] for label in labels]
+                suffixes = [label["suffix"] for label in labels]
+                images_flat = images
+            else:
+                assert np.all([len(x) == 2 for x in images])
+                prefixes = ["<image><image>" + label["prefix"] for label in labels]
+                suffixes = [label["suffix"] for label in labels]
+                images_flat = [img for img_list_x in images for img in img_list_x]
 
         inputs = processor(
             text=prefixes,
@@ -167,6 +174,10 @@ def save_hyperparams(save_path_final, save_path, args):
     # save the script - just copy paste it to the save_path with os
     os.system(f"cp {__file__} {save_path_final}/hf_image_condition.py")
 
+    with open(save_path_final / "cvla_info.json","w") as f_obj:
+        clva_info = dict(return_depth=args.depth, action_encoder=args.action_encoder)
+        json.dump(clva_info, f_obj)
+
 
 def get_trainer(args, model, processor, train_dataset, eval_dataset, collate_fn, save_path, eval_dummy_camera):
     # FT ONLY THE SELF-ATTENTION LAYERS
@@ -248,10 +259,14 @@ def get_trainer(args, model, processor, train_dataset, eval_dataset, collate_fn,
 
 def get_datasets(args, dataset_location):
     # SETTING UP THE DATASET
-    action_encoder = "xyzrotvec-cam-512xy128d"
+    action_encoder = args.action_encoder
     bg_image_dataset = ImageFolderDataset("/tmp/indoorCVPR/Images", transform=transforms.RandomResizedCrop((448, 448)))
     randomize_background = RandomizeBackgrounds(p=args.p_background, background_images=bg_image_dataset)
+    
     return_depth = False
+    if args.depth:
+        return_depth = True
+
     if args.no_augs:
         augment_rgbds = None
         augment_rgb=None
@@ -274,15 +289,14 @@ def get_datasets(args, dataset_location):
         raw_dataset = ConcatDataset([dataset1, dataset2])
         dataset_location = "/tmp/clevr-act-7-depth"  # so that eval dataset can be loaded
     else:
-        raw_dataset = H5Dataset(dataset_location, augment_rgbds=augment_rgbds, augment_rgb=augment_rgb, augment_text=augment_text,
-                                augment_depth=augment_depth, return_depth=return_depth, action_encoder=action_encoder)
+        raw_dataset = H5Dataset(dataset_location, return_depth=return_depth, action_encoder=action_encoder,
+                                augment_rgbds=augment_rgbds, augment_rgb=augment_rgb, augment_text=augment_text, augment_depth=augment_depth)
     
-
-        
     if args.conditioning == "text":
         run_name = f"_text_lr{args.lr}" + args.extra_run_name
         train_dataset = raw_dataset
-        eval_dataset = H5Dataset(dataset_location, augment_rgbds=None, augment_rgb=None, augment_text=None, augment_depth=None, return_depth=False, limit_samples=200)
+        eval_dataset = H5Dataset(dataset_location, return_depth=return_depth, action_encoder=action_encoder, limit_samples=200,
+                                 augment_rgbds=None, augment_rgb=None, augment_text=None, augment_depth=None)
         eval_dummy_camera = eval_dataset[0][1]["camera"]
     
     elif args.conditioning == "trajectory":
@@ -300,7 +314,7 @@ def get_datasets(args, dataset_location):
     else:
         raise ValueError("Unknown conditioning {args.conditioning}")
     
-    print("dataset_location:", dataset_location,"samples:", len(raw_dataset), "paired_samples:", len(train_dataset))
+    print("dataset_location:", dataset_location, "samples:", len(train_dataset))
 
     return train_dataset, eval_dataset, run_name, eval_dummy_camera
 
@@ -342,6 +356,8 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_id", type=str, default="google/paligemma2-3b-pt-224")
     parser.add_argument("--conditioning", type=str, choices=["text", "trajectory"], default="text")
+    parser.add_argument("--action_encoder", type=str, choices=["xyzrotvec-cam-512xy128d",], default="xyzrotvec-cam-512xy128d")
+    parser.add_argument("--depth", action="store_true")
     parser.add_argument("--extra_run_name", type=str, default="debug")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--batch_size_dev", type=int, default=4)
@@ -390,6 +406,7 @@ def main():
     # SETTING UP THE TRAINER
     trainer = get_trainer(args, model, processor, train_dataset, eval_dataset, collate_fn, save_path, eval_dummy_camera)
     
+    trainer.evaluate()
     # TRAINING THE MODEL
     try:
         trainer.train()

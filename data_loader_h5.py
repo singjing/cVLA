@@ -18,8 +18,8 @@ from data_augmentations import depth_to_color
 
 
 class H5Dataset(Dataset):
-    def __init__(self, h5_file_or_dir, return_depth=False, augment_rgbds=None, augment_rgb=None,
-                 augment_depth=None, depth_to_color=True, augment_text=None, return_only_prefix=False,
+    def __init__(self, h5_file_or_dir, return_depth=False, augment_depth=None, depth_to_color=True,
+                 augment_rgbds=None, augment_rgb=None, augment_text=None, return_only_prefix=False,
                  action_encoder="xyzrotvec-cam-1024xy", limit_samples=None):
         """
         The augment functions are applied in order same order as the order of arguments.
@@ -79,7 +79,7 @@ class H5Dataset(Dataset):
             if x.startswith("action_text_"):
                 action_text = str(x).replace("action_text_", "")
 
-        frame_idx = slice(0,1)        
+        frame_idx = slice(0, 1)
         obj_start = Pose(torch.tensor(self.h5_file[f"traj_{idx}/obs/extra/obj_start"][frame_idx]))
         obj_end = Pose(torch.tensor(self.h5_file[f"traj_{idx}/obs/extra/obj_end"][frame_idx]))
         grasp_pose = Pose(torch.tensor(self.h5_file[f"traj_{idx}/obs/extra/grasp_pose"][frame_idx]))
@@ -119,7 +119,7 @@ class H5Dataset(Dataset):
         if self.return_depth:
             if depth is None:
                 depth = self.h5_file[f'traj_{idx}/obs/sensor_data/render_camera/depth'][0][:,:,0]
-                depth = np.clip(depth, 0, 1023)
+                depth = np.clip(depth, 0, 1023)  # depth im [mm]
 
             if self.augment_depth is not  None:
                 depth, suffix = self.augment_depth(depth, entry["suffix"], self.action_encoder, camera)
@@ -128,12 +128,11 @@ class H5Dataset(Dataset):
             if self.depth_to_color:
                 depth = depth_to_color(depth)
                 depth = np.clip((depth * 255).round(), 0, 255).astype(np.uint8)
-
-            #else:
-            #    depth = depth[:,:,0]
+            else:
+                depth = depth[:, :, 0] # depth im [mm]
             return [depth, image], entry
         
-        return Image.fromarray(image), entry
+        return image, entry
 
 
 

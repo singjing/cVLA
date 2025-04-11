@@ -140,7 +140,7 @@ def test_norm_color_pingpoing():
 
 # Depth Augmentation --------------------------------------------------------
 class DepthAugmentation:
-    def __init__(self, depth_range=(.25,1.00), max_delta_depth=.35):
+    def __init__(self, depth_range=(.25, 1.00), max_delta_depth=.35):
         """
         Arguments:
             depth_range: tuple of min and max depth in [m]
@@ -236,7 +236,8 @@ real_block_word = {'cube': {'block': 118, 'cube': 21, 'box': 2},'sphere': {'sphe
 
 
 #MOVE_REGEX = re.compile(r"^move\s+([\w-]+(?:\s+[\w-]+)*)\s+onto\s+([\w-]+(?:\s+[\w-]+)*)$")
-MOVE_REGEX = re.compile(r"^move\s+([\w'-]+(?:\s+[\w'-]+)*)\s+onto\s+([\w'-]+(?:\s+[\w'-]+)*)$")
+#MOVE_REGEX = re.compile(r"^move\s+([\w'-]+(?:\s+[\w'-]+)*)\s+onto\s+([\w'-]+(?:\s+[\w'-]+)*)$")
+MOVE_REGEX = re.compile(r"^move\s+([\w',.-]+(?:\s+[\w',.-]+)*)\s+onto\s+([\w',.-]+(?:\s+[\w',.-]+)*)$")
 
 def complexify_text(text):
     match = MOVE_REGEX.match(text.strip())
@@ -351,14 +352,21 @@ class CropMiddle:
         self.object_size = object_size
         self.valid = valid
         
-    def __call__(self, image: Image, suffix: str):
+    def __call__(self, image: Image, suffix: str, enc):
         """
         Arguments: see __init__()
         """
 
         object_size = self.object_size
         crop_size = self.crop_size
-        image_width, image_height = image.size[:2]
+
+        try:
+            image_width, image_height = image.size[:2]
+        except TypeError:
+            image_width, image_height = image.shape[:2]
+
+        if enc.NAME != "xyzrotvec-cam-1024xy":
+            raise NotImplementedError
 
         # convert string tokens to int
         # depth in cm, x and y in [0, 1023]

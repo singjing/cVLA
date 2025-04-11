@@ -3,7 +3,7 @@ from PIL import Image
 import os
 
 class ImageFolderDataset(Dataset):
-    def __init__(self, root_dir, transform=None):
+    def __init__(self, root_dir, transform=None, startswith=None):
         """
         Args:
             root_dir (str): Path to the root directory containing subdirectories of images.
@@ -23,7 +23,11 @@ class ImageFolderDataset(Dataset):
             if os.path.isdir(class_path):  # Only process directories
                 self.class_to_idx[class_name] = class_idx
                 for file_name in os.listdir(class_path):
-                    if file_name.lower().endswith(('.jpg', '.jpeg', '.png')):  # Check valid image extensions
+                    end_match = file_name.lower().endswith(('.jpg', '.jpeg', '.png'))
+                    start_match = True
+                    if startswith is not None:
+                        start_match = file_name.startswith(startswith)
+                    if start_match and end_match:  # Check valid image extensions
                         self.image_paths.append(os.path.join(class_path, file_name))
                         self.labels.append(class_idx)
 

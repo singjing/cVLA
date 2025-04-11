@@ -472,6 +472,7 @@ class TrajectoryEncoder_xyzrotvec2:
     DEPTH_RANGE = None # (.1, 1.0)  # [meters]  
     DEPTH_TOKENS_START = 0
     DEPTH_TOKENS_END = 1024
+    NAME = "xyzrotvec-cam-1024xy"
 
     def __init__(self):
         if self.DEPTH_SCALE:
@@ -654,14 +655,17 @@ decode_trajectory_xyzrotvec2 = encoder_xyzrotvec2_inst.decode_trajectory
 
 class TrajectoryEncoder_xyzrotvec_512xy(TrajectoryEncoder_xyzrotvec2):
     XY_TOKENS = 512  # as in 1024 tokens in total going from 0 to 511
+    NAME = "xyzrotvec-cam-512xy"
 encoder_xyzrotvec_512_inst = TrajectoryEncoder_xyzrotvec_512xy()
 
 class TrajectoryEncoder_xyzrotvec4(TrajectoryEncoder_xyzrotvec2):
     XY_TOKENS = 256  # as in 1024 tokens in total going from 0 to 255
+    NAME = "xyzrotvec-cam-256xy"
 encoder_xyzrotvec_256_inst = TrajectoryEncoder_xyzrotvec4()
 
 class TrajectoryEncoder_xyzrotvec5(TrajectoryEncoder_xyzrotvec2):
     XY_TOKENS = 128  # as in 1024 tokens in total going from 0 to 255
+    NAME = "xyzrotvec-cam-128xy"
 encoder_xyzrotvec_128_inst = TrajectoryEncoder_xyzrotvec5()
 
 class TrajectoryEncoder_xyzrotvec_512xy128d(TrajectoryEncoder_xyzrotvec2):
@@ -672,6 +676,7 @@ class TrajectoryEncoder_xyzrotvec_512xy128d(TrajectoryEncoder_xyzrotvec2):
     remaining_tokens = 1024 - XY_TOKENS - DEPTH_TOKENS
     DEPTH_TOKENS_START = XY_TOKENS + (remaining_tokens)//2  # 704
     DEPTH_TOKENS_END = DEPTH_TOKENS_START + DEPTH_TOKENS # 832
+    NAME = "xyzrotvec-cam-512xy128d"
 encoder_xyzrotvec_512xy128d_inst = TrajectoryEncoder_xyzrotvec_512xy128d()
 
 class TrajectoryEncoder_xyzrotvec_512xy256d(TrajectoryEncoder_xyzrotvec2):
@@ -681,7 +686,8 @@ class TrajectoryEncoder_xyzrotvec_512xy256d(TrajectoryEncoder_xyzrotvec2):
     DEPTH_TOKENS = 256
     remaining_tokens = 1024 - XY_TOKENS - DEPTH_TOKENS
     DEPTH_TOKENS_START = XY_TOKENS + (remaining_tokens)//2  
-    DEPTH_TOKENS_END = DEPTH_TOKENS_START + DEPTH_TOKENS 
+    DEPTH_TOKENS_END = DEPTH_TOKENS_START + DEPTH_TOKENS
+    NAME = "xyzrotvec-cam-512xy256d"
 encoder_xyzrotvec_512xy256d_inst = TrajectoryEncoder_xyzrotvec_512xy256d()
 
 

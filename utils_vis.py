@@ -4,10 +4,9 @@ import base64
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
-from utils_traj_tokens import decode_caption_xyzrotvec2, decode_trajectory_xyzrotvec2
+from utils_traj_tokens import getActionEncInstance
 from utils_trajectory import DummyCamera, project_points, convert_to_tensor
 from PIL import Image
-import torch
 
 
 def get_standard_camera(image_height, image_width):
@@ -51,11 +50,11 @@ def transform_3d(point_3d: np.ndarray, mat: np.ndarray):
     res = res / res[3] # remove homogeneous coordinate
     return res[:3]
 
-def draw_coordinate_frame(label, camera, ax):
+def draw_coordinate_frame(label, camera, enc, ax):
     # === draw axis frame
     # curve shape (B, N, X Y Z) in camera 3D space
     # quat shape (B, N, qw qx qy qz)
-    curve_w, quat_w = decode_trajectory_xyzrotvec2(label, camera)
+    curve_w, quat_w = enc.decode_trajectory(label, camera)
 
     # coordinate frame
     dist = 0.1
@@ -121,19 +120,20 @@ def draw_probas_edge(image, pred_scores):
 
     return image
 
-def render_example(image, label, prediction=None, text=None, camera=None, dec=None, dec_pred=None):
-    """render examples, for use in notebook:
-    
-        from IPython.display import display, HTML
-        display(HTML(html_imgs))
+def render_example(image, label, prediction: str=None, camera=None, enc=None, enc_pred=None, text: str=None):
     """
-    dec_label = dec
-    if dec_label is None:
-        print("Warning: default action decoder is used")
-        dec_label = decode_caption_xyzrotvec2
+    Render an example image to HTML, e.g., for use in notebooks.
+    Arguments:
+        image: rgb array or (depth, rgb) tuple
+    """
+
+    enc_label = enc
+    if enc_label is None:
+        print("Warning: default action encoder is used")
+        enc_label = getActionEncInstance("xyzrotvec-cam-1024xy")
         
-    if dec_pred is None:
-        dec_pred = dec_label
+    if enc_pred is None:
+        enc_pred = enc_label
 
     if isinstance(image, Image.Image):
         image_width, image_height = image.size
@@ -146,7 +146,7 @@ def render_example(image, label, prediction=None, text=None, camera=None, dec=No
         camera = get_standard_camera(image_width, image_height)
 
     # logic for when to draw coords
-    draw_pred_coords = False
+    draw_pred_coords = True
     draw_label_coords = False
     if prediction is not None:
         draw_label_coords = False
@@ -157,17 +157,14 @@ def render_example(image, label, prediction=None, text=None, camera=None, dec=No
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
     ax.imshow(image)
     ax.axis('off')
-    if camera:
-        try:
-            curve_25d, quat_c = dec_label(label, camera) 
-            curve_2d  = curve_25d[:, :2]
-            ax.plot(curve_2d[:, 0], curve_2d[:, 1],'.-', color='green')
-            if draw_label_coords:
-                draw_coordinate_frame(prediction, camera, ax)
-
-                
-        except ValueError:
-            pass
+    try:
+        curve_25d, quat_c = enc_label.decode_caption(label, camera) 
+        curve_2d  = curve_25d[:, :2]
+        ax.plot(curve_2d[:, 0], curve_2d[:, 1],'.-', color='green')
+        if draw_label_coords:
+            draw_coordinate_frame(label, camera, enc_label, ax)            
+    except ValueError:
+        pass
 
     html_text = ""
     if text:
@@ -177,11 +174,11 @@ def render_example(image, label, prediction=None, text=None, camera=None, dec=No
     if prediction:
         html_text += f'</br></br>{html.escape("pred: "+prediction)}'
         try:
-            curve_2d_gt, quat_c = dec_pred(prediction, camera)
+            curve_2d_gt, quat_c = enc_pred.decode_caption(prediction, camera)
             ax.plot(curve_2d_gt[:, 0], curve_2d_gt[:, 1],'.-', color='lime')
             ax.scatter(curve_2d_gt[0, 0], curve_2d_gt[0, 1], color='red')
             if draw_pred_coords:
-                draw_coordinate_frame(prediction, camera, ax)
+                draw_coordinate_frame(prediction, camera, enc_pred, ax)
         except (ValueError, IndexError):
             pass
 
