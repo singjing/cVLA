@@ -177,13 +177,13 @@ def render_example(image, label, prediction: str=None, camera=None, enc=None, en
         ax.plot(curve_2d[:, 0], curve_2d[:, 1],'.-', color='green')
         if draw_label_coords:
             draw_coordinate_frame(label, camera, enc_label, ax)            
-    except ValueError:
+    except (ValueError, TypeError):
         pass
 
     html_text = ""
     if text:
        html_text = f'{html.escape("text: "+text)}'
-    html_text += f'</br></br>{html.escape("label: "+label)}'
+    html_text += f'</br></br>{html.escape("label: "+str(label))}'
 
     if prediction:
         html_text += f'</br></br>{html.escape("pred: "+prediction)}'
