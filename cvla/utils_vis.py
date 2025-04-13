@@ -2,11 +2,12 @@ import io
 import html
 import base64
 import numpy as np
+from PIL import Image
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
-from utils_traj_tokens import getActionEncInstance
-from utils_trajectory import DummyCamera, project_points, convert_to_tensor
-from PIL import Image
+
+from cvla.utils_traj_tokens import getActionEncInstance
+from cvla.utils_trajectory import DummyCamera, project_points, convert_to_tensor
 
 
 def get_standard_camera(image_height, image_width):

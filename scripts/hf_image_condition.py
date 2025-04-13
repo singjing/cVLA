@@ -13,10 +13,10 @@ from torchvision import transforms
 from scipy.spatial.transform import Rotation as R
 from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration, Seq2SeqTrainingArguments, Seq2SeqTrainer, GenerationConfig, AutoProcessor, AutoModelForCausalLM
 
-from data_loader_h5 import H5Dataset
-from data_loader_images import ImageFolderDataset
-from data_loader_paired import PairedDataset
-from data_augmentations import augment_image_rgb, RandomizeBackgrounds, complexify_text
+from cvla.data_loader_h5 import H5Dataset
+from cvla.data_loader_images import ImageFolderDataset
+from cvla.data_loader_paired import PairedDataset
+from cvla.data_augmentations import augment_image_rgb, RandomizeBackgrounds, complexify_text
 
 
 def extract_tokens(text):

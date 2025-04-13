@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import torch
 from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration
-from utils_traj_tokens import getActionEncInstance
+from cvla.utils_traj_tokens import getActionEncInstance
 
 
 class cVLA_wrapped:

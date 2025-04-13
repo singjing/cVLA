@@ -8,15 +8,12 @@ from collections import defaultdict
 import numpy as np
 import pickle
 from mani_skill.utils.structs import Pose
-from mani_skill.examples.utils_traj_tokens import to_prefix_suffix
-from mani_skill.examples.utils_traj_tokens import getActionEncDecFunction
-from utils_trajectory import DummyCamera
+from cvla.utils_traj_tokens import to_prefix_suffix, getActionEncDecFunction
+from cvla.utils_trajectory import DummyCamera
 from torch.utils.data import Dataset
-from data_augmentations import depth_to_color
-from utils_traj_tokens import decode_caption_xyzrotvec2
+from cvla.data_augmentations import depth_to_color
 
 enc_func, dec_func = getActionEncDecFunction("xyzrotvec-cam-proj2")
-
 import matplotlib.pyplot as plt
 
 

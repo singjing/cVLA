@@ -19,6 +19,7 @@ dependencies = [
     "Pillow",
     "h5py",
     "matplotlib",
+    "nbstripout",
     "numpy",
     "scipy",
     "sentencepiece",

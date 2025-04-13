@@ -3,10 +3,9 @@ This file is supposed to have utils for generating trajectories, meaning geometr
 """
 import numpy as np
 import torch
+from matplotlib import cm
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
-from matplotlib import cm
-from pdb import set_trace
 
 
 def batch_multiply(tensor_A, tensor_B):

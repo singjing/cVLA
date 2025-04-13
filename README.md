@@ -15,7 +15,7 @@ pip install -e .
 cd ..
 git clone git@github.com:BlGene/cVLA.git
 cd cVLA
-pip install -e .  # has not been tested -.-
+pip install -e .
 ```
 
 ## Copying Datasets

@@ -4,11 +4,11 @@ import torch
 import re
 from pdb import set_trace
 from scipy.spatial.transform import Rotation as R
-
 from mani_skill.utils.structs import Pose
-from utils_trajectory import project_points, clip_and_interpolate
-from utils_trajectory import unproject_points
-from utils_trajectory import generate_curve_torch
+
+from cvla.utils_trajectory import project_points, clip_and_interpolate
+from cvla.utils_trajectory import unproject_points
+from cvla.utils_trajectory import generate_curve_torch
 
 def normalize_imgcoord(traj, resolution_wh, token_num=1024):
     """
