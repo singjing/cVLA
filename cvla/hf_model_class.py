@@ -82,11 +82,11 @@ class cVLA_wrapped:
         self.collate_fn = collate_fn
         
 
-    def predict(self, images, action_text, robot_state=None):
-        if robot_state is None:
-            robot_state = "<loc0137><loc0794><loc0057><seg058><seg034><seg017>"
-
-        prefix = action_text + " " + robot_state
+    def predict(self, images, prefix, robot_state=None):
+        #if robot_state is None:
+        #    robot_state = "<loc0137><loc0794><loc0057><seg058><seg034><seg017>"
+        #assert robot_state is not None
+        #prefix = action_text + " " + robot_state
         entry_dict = dict(prefix=prefix)
 
         batch = [(images, entry_dict)]  # batch size of 1
@@ -98,6 +98,13 @@ class cVLA_wrapped:
             decoded = [self.processor.decode(x, skip_special_tokens=True) for x in generation[:, prefix_length:]]
 
         return decoded
+    
+    # this is for the maniskill env, see run_env.py
+    def make_predictions(self, image_before, prefix):
+        print("prefix:", prefix)
+        decoded = self.predict(image_before, prefix)
+        return None, None, None, decoded
+
 
     def predict_trajectory(self, images, action_text, camera=None, robot_state=None):
         pred_text = self.predict(images, action_text=action_text)

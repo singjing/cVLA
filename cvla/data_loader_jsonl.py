@@ -9,9 +9,9 @@ from collections import defaultdict
 import torch
 from torch.utils.data import Dataset
 
-from utils_trajectory import DummyCamera
-from utils_traj_tokens import getActionEncInstance
-from data_augmentations import depth_to_color as depth_to_color_func
+from cvla.utils_trajectory import DummyCamera
+from cvla.utils_traj_tokens import getActionEncInstance
+from cvla.data_augmentations import depth_to_color as depth_to_color_func
 
 def clean_prompt(prompt_text):
     return prompt_text.lower().replace("\n","").replace(".","").replace("  "," ")

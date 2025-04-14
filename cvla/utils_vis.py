@@ -121,7 +121,7 @@ def draw_probas_edge(image, pred_scores):
 
     return image
 
-def render_example(image, label, prediction: str=None, camera=None, enc=None, enc_pred=None, text: str=None):
+def render_example(image, label: str=None, prediction: str=None, camera=None, enc=None, enc_pred=None, text: str=None):
     """
     Render an example image to HTML, e.g., for use in notebooks.
     Arguments:

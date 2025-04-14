@@ -691,14 +691,6 @@ class TrajectoryEncoder_xyzrotvec_512xy256d(TrajectoryEncoder_xyzrotvec2):
 encoder_xyzrotvec_512xy256d_inst = TrajectoryEncoder_xyzrotvec_512xy256d()
 
 
-def getActionEncDecFunction(name):
-    if name == "xyzrotvec-rbt":
-        return encode_trajectory_xyzrotvec_rbt, decode_trajectory_xyzrotvec_rbt
-    elif name == "xyzrotvec-cam-proj":
-        return encode_trajectory_xyzrotvec, decode_trajectory_xyzrotvec
-    elif name == "xyzrotvec-cam-proj2":
-        return encode_trajectory_xyzrotvec2, decode_trajectory_xyzrotvec2
-
 def getActionEncInstance(name):
     if name == "xyzrotvec-cam-1024xy" or name == "xyzrotvec-cam-proj2":
         return encoder_xyzrotvec2_inst
@@ -712,7 +704,6 @@ def getActionEncInstance(name):
         return encoder_xyzrotvec_512xy128d_inst
     elif name == "xyzrotvec-cam-512xy256d":
         return encoder_xyzrotvec_512xy256d_inst
-    
     else:
         raise ValueError(f"unknown encoder name {name}")
 
