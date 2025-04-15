@@ -13,10 +13,38 @@ from torchvision import transforms
 from scipy.spatial.transform import Rotation as R
 from transformers import PaliGemmaProcessor, PaliGemmaForConditionalGeneration, Seq2SeqTrainingArguments, Seq2SeqTrainer, GenerationConfig, AutoProcessor, AutoModelForCausalLM
 
+from cvla.utils_eval import Evaluator
 from cvla.data_loader_h5 import H5Dataset
+from cvla.data_loader_jsonl import JSONLDataset
 from cvla.data_loader_images import ImageFolderDataset
 from cvla.data_loader_paired import PairedDataset
 from cvla.data_augmentations import augment_image_rgb, RandomizeBackgrounds, complexify_text
+
+
+class MultiEvalSeq2SeqTrainer(Seq2SeqTrainer):
+    def evaluate(self, eval_dataset=None, metric_key_prefix="eval", **kwargs):
+        # Evaluate on synthetic dataset (default eval_dataset)
+        self.compute_metrics = self.compute_metrics_sim
+        metrics_synth = super().evaluate(
+            eval_dataset=eval_dataset,
+            metric_key_prefix="eval_data_sim",
+            **kwargs,
+        )
+
+        # Evaluate on real dataset if it's set
+        if hasattr(self, "eval_dataset_real"):
+            self.compute_metrics = self.compute_metrics_real
+            metrics_real = super().evaluate(
+                eval_dataset=self.eval_dataset_real,
+                metric_key_prefix="eval_data_real",
+                **kwargs,
+            )
+            metrics_synth.update(metrics_real)
+
+        print("metrics_synth:", metrics_synth)
+
+        return metrics_synth
+
 
 
 def extract_tokens(text):
@@ -25,6 +53,11 @@ def extract_tokens(text):
     """
     return re.findall(r"<loc\d+>|<seg\d+>", text)
 
+
+def augment_suffix(suffix):
+    parts = suffix.split(' ; ')
+    random.shuffle(parts)
+    return ' ; '.join(parts)
 
 
 def get_robot_state(prefix):
@@ -70,6 +103,7 @@ def get_collate_fn(processor, num_images_in_context, image_order, TORCH_DTYPE, a
                 suffixes = [label["suffix"] for label in labels]
                 images_flat = [img for img_list_x in images for img in img_list_x]
 
+
         inputs = processor(
             text=prefixes,
             images=images_flat,
@@ -83,17 +117,14 @@ def get_collate_fn(processor, num_images_in_context, image_order, TORCH_DTYPE, a
     return collate_fn
 
 
-def get_compute_metrics_fn(processor, max_tokens, eval_dummy_camera, encoder):
+def get_compute_metrics_fn(processor, max_tokens, eval_dummy_camera, action_encoder, action_encoder_labels=None):
     eval_dummy_camera.extrinsic_matrix = torch.tensor([[[1, 0, 0, 0.0], [0, 1, 0, 0], [0, 0, 1, 0]]])
-    decoder_fn = encoder.decode_trajectory
+    evaluator = Evaluator(action_encoder, eval_dummy_camera, encoder_labels=action_encoder_labels)
+
     def compute_metrics(eval_pred):
-        predictions, labels = eval_pred
+        predictions, labels = eval_pred    
         metric = []
         whole_text = []
-        all_preds_pos = []
-        all_preds_orn = []
-        all_labels_pos = []
-        all_labels_orn = []
         for i in range(len(predictions)):
             prefix_len = sum(labels[i] == -100) # first x tokens are -100, end is generated
             decoded_preds = processor.decode(predictions[i, labels[i].shape[0]:], skip_special_tokens=True)
@@ -109,39 +140,14 @@ def get_compute_metrics_fn(processor, max_tokens, eval_dummy_camera, encoder):
             else:
                 whole_text.append(0)
 
-            if len(decoded_preds) == len(decoded_labels):
-                pos_data, orn_data = decoder_fn(decoded_labels, camera=eval_dummy_camera)
-                pos_pred, orn_pred = decoder_fn(decoded_preds, camera=eval_dummy_camera)
+            evaluator.evaluate(decoded_preds, decoded_labels)
 
-                # mode is cart?
-                pos_data, orn_data = pos_data[0], orn_data[0]
-                pos_pred, orn_pred = pos_pred[0], orn_pred[0]
+        final_metrics = evaluator.report_stats()
+        final_metrics["valid_samples_ratio"] = np.sum(metric) / len(metric)
+        final_metrics["whole_text_ratio"] = np.sum(whole_text) / len(whole_text)
+        evaluator.reset()
 
-                all_preds_pos.append(pos_pred.numpy())
-                all_labels_pos.append(pos_data.numpy())
-                all_preds_orn.append(R.from_quat(orn_pred.numpy(), scalar_first=True))
-                all_labels_orn.append(R.from_quat(orn_data.numpy(), scalar_first=True))
-
-        if len(all_preds_pos) == 0:
-            l2_distance = -1
-            l1_distance = -1
-            l1_degrees = -1
-            l2_degrees = -1
-        else:
-            all_preds_pos = np.array(all_preds_pos)
-            all_labels_pos = np.array(all_labels_pos)
-            
-            valid_diff = (all_labels_pos - all_preds_pos) * 100  # m to cm
-            valid_orn_diffs = [(R.inv(r1)*r2) for r1, r2 in zip(all_labels_orn, all_preds_orn)]
-            valid_orn_diffs_deg = np.array([r1.magnitude() for r1 in valid_orn_diffs])*180/np.pi
-
-            l1_distance = np.mean(np.abs(valid_diff))
-            l2_distance = np.linalg.norm(valid_diff)
-            l1_degrees = np.mean(np.abs(valid_orn_diffs_deg))
-            l2_degrees = np.linalg.norm(valid_orn_diffs_deg)
-
-        return {"valid_samples_ratio": np.sum(metric) / len(metric), "whole_text_ratio": np.sum(whole_text) / len(whole_text),
-                "L2_distance": l2_distance, "L1_distance": l1_distance, "L1_degrees": l1_degrees, "L2_degrees": l2_degrees}
+        return final_metrics
     return compute_metrics
 
 
@@ -179,26 +185,37 @@ def save_hyperparams(save_path_final, save_path, args):
         json.dump(clva_info, f_obj)
 
 
-def get_trainer(args, model, processor, train_dataset, eval_dataset, collate_fn, save_path, eval_dummy_camera):
+def get_trainer(args, model, processor, train_dataset, eval_sim_dataset, eval_real_dataset, collate_fn, save_path, eval_sim_dummy_camera, 
+                eval_real_dummy_camera, action_encoder, eval_sim_action_encoder, eval_real_action_encoder):
     # FT ONLY THE SELF-ATTENTION LAYERS
     for param in model.vision_tower.parameters():
         param.requires_grad = False
 
     for param in model.multi_modal_projector.parameters():
         param.requires_grad = False
-        
+            
     for name, param in model.named_parameters():
         if param.requires_grad == True:
-            if "self_attn" in name:
-                param.requires_grad = True
+            if args.ft_more_params:
+                if "self_attn" in name or "mlp" in name:
+                    param.requires_grad = True
+                    print("set to True:", name)
+                else:
+                    param.requires_grad = False
             else:
-                param.requires_grad = False
+                if "self_attn" in name:
+                    param.requires_grad = True
+                else:
+                    param.requires_grad = False
 
     TRAIN_EXAMPLES = len(train_dataset) * args.num_repeats
     BATCH_SIZE = args.batch_size
     BATCH_SIZE_DEV = args.batch_size_dev # on l40 was 8
     GRAD_ACCUM = int(round(BATCH_SIZE / BATCH_SIZE_DEV))
-    TRAIN_STEPS = (TRAIN_EXAMPLES // BATCH_SIZE)
+    if args.max_steps > 0:
+        TRAIN_STEPS = args.max_steps
+    else:
+        TRAIN_STEPS = (TRAIN_EXAMPLES // BATCH_SIZE)
     SEQLEN = args.max_tokens
     SAVE_STEPS = args.save_steps
     SAVE_LIMIT = args.save_limit
@@ -237,20 +254,46 @@ def get_trainer(args, model, processor, train_dataset, eval_dataset, collate_fn,
         dataloader_num_workers=4,
         # Add evaluation-related settings
         eval_strategy=eval_strategy,  # or "epoch"
-        eval_steps=SAVE_STEPS,        # how often to evaluate
+        eval_steps= SAVE_STEPS,        # how often to evaluate
         predict_with_generate=True,   # important for generation tasks
         generation_config=generation_config,
         do_eval=not args.no_eval,
     )
 
-    trainer = Seq2SeqTrainer(
-        model=model,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        data_collator=collate_fn,
-        args=args_jax,
-        compute_metrics=get_compute_metrics_fn(processor, SEQLEN, eval_dummy_camera, encoder=eval_dataset.action_encoder),
-    )
+    # TODO: Something does not work properly with dual evaluation
+    if args.double_eval:
+        trainer = MultiEvalSeq2SeqTrainer(
+            model=model,
+            train_dataset=train_dataset,
+            eval_dataset=eval_sim_dataset,
+            data_collator=collate_fn,
+            args=args_jax,
+            compute_metrics=get_compute_metrics_fn(processor, SEQLEN, eval_sim_dummy_camera, action_encoder, eval_sim_action_encoder),
+        )
+
+        trainer.eval_dataset_real = eval_real_dataset
+        trainer.compute_metrics_real = get_compute_metrics_fn(processor, SEQLEN, eval_real_dummy_camera, action_encoder, eval_real_action_encoder)
+        trainer.compute_metrics_sim = get_compute_metrics_fn(processor, SEQLEN, eval_sim_dummy_camera, action_encoder, eval_sim_action_encoder)
+    else:
+        if args.eval_dataset == "real":
+            eval_dataset = eval_real_dataset
+            eval_dummy_camera = eval_real_dummy_camera
+            eval_action_encoder = eval_real_action_encoder
+        elif args.eval_dataset == "sim":
+            eval_dataset = eval_sim_dataset
+            eval_dummy_camera = eval_sim_dummy_camera
+            eval_action_encoder = eval_sim_action_encoder
+        else:
+            raise ValueError(f"Unknown eval dataset: {args.eval_dataset}")
+        
+        trainer = Seq2SeqTrainer(
+            model=model,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            data_collator=collate_fn,
+            args=args_jax,
+            compute_metrics=get_compute_metrics_fn(processor, SEQLEN, eval_dummy_camera, action_encoder, eval_action_encoder),
+        )
 
     trainer.model.config.use_cache = False
 
@@ -258,10 +301,12 @@ def get_trainer(args, model, processor, train_dataset, eval_dataset, collate_fn,
 
 
 def get_datasets(args, dataset_location):
+    
     # SETTING UP THE DATASET
     action_encoder = args.action_encoder
     bg_image_dataset = ImageFolderDataset("/tmp/indoorCVPR/Images", transform=transforms.RandomResizedCrop((448, 448)))
     randomize_background = RandomizeBackgrounds(p=args.p_background, background_images=bg_image_dataset)
+    forced_image_augs = RandomizeBackgrounds(p=1.0, background_images=bg_image_dataset)
     
     return_depth = False
     if args.depth:
@@ -295,28 +340,70 @@ def get_datasets(args, dataset_location):
     if args.conditioning == "text":
         run_name = f"_text_lr{args.lr}" + args.extra_run_name
         train_dataset = raw_dataset
-        eval_dataset = H5Dataset(dataset_location, return_depth=return_depth, action_encoder=action_encoder, limit_samples=200,
+        
+        eval_sim_dataset = H5Dataset(dataset_location, return_depth=return_depth, action_encoder=action_encoder, limit_samples=200,
                                  augment_rgbds=None, augment_rgb=None, augment_text=None, augment_depth=None)
-        eval_dummy_camera = eval_dataset[0][1]["camera"]
-    
+        eval_sim_dummy_camera = eval_sim_dataset[0][1]["camera"]
+        eval_sim_action_encoder = None
+        eval_dataset_location  = Path("/data/lmbraid19/argusm/datasets/clevr-real-block-simple-v4")
+        eval_real_dataset = JSONLDataset(
+            jsonl_file_path=f"{eval_dataset_location}/_annotations.valid.jsonl",
+            image_directory_path=f"{eval_dataset_location}/dataset",
+            clean_prompt=True,
+            return_depth=False,
+        )
+        eval_real_dummy_camera = eval_real_dataset[0][1]["camera"]
+        eval_real_action_encoder = eval_real_dataset.action_encoder
+
     elif args.conditioning == "trajectory":
-        run_name = f"_imagesInContext_{num_images_in_context}_promptOrder_{image_order}"
-        run_name += f"maxTokens{args.max_tokens}_lr{args.lr}" + args.extra_run_name
         num_images_in_context = args.num_images_in_context
         image_order = args.image_order
+
+        run_name = f"_img_{num_images_in_context}_pr_{image_order}_enc_{action_encoder}"
         load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"train_dataset_{run_name}_new.pkl"
+        run_name += f"maxTokens{args.max_tokens}_lr{args.lr}" + args.extra_run_name  
+
         train_dataset = PairedDataset(raw_dataset, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=load_presampled_pairs_path,
-                                    mode="train", p_copy=args.p_copy, apply_copy_augs=args.apply_copy_augs, sort_by_l2_distance=args.sort_by_l2_distance)
+                                    mode="train", p_copy=args.p_copy, apply_copy_augs=args.apply_copy_augs, p_sort_by_l2_distance=args.p_sort_by_l2_distance, 
+                                    sort_criteria=args.sort_criteria, presampled_path=None)
+        
+        eval_dataset_location  = Path("/data/lmbraid19/argusm/datasets/clevr-real-block-simple-v4")
+        eval_run_name = f"_img_{num_images_in_context}_pr_{image_order}_enc_xyzrotvec-cam-1024xy"
+        eval_real_load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{eval_dataset_location.name}_dataset_{eval_run_name}_new.pkl"
+        presampled_eval_sequences_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{eval_dataset_location.name}_{eval_run_name}_pCopy0_pSorting0_presampled_eval_sequences.pkl"
+        
+        real_raw_eval_dataset = JSONLDataset(
+                jsonl_file_path=f"{eval_dataset_location}/_annotations.valid.jsonl",
+                image_directory_path=f"{eval_dataset_location}/dataset",
+                clean_prompt=True,
+                return_depth=False,
+            )
+        
+        eval_real_dataset = PairedDataset(real_raw_eval_dataset, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=eval_real_load_presampled_pairs_path,
+                                    mode="test", p_copy=0, apply_copy_augs=False, p_sort_by_l2_distance=0, 
+                                    sort_criteria=args.sort_criteria, presampled_path=presampled_eval_sequences_path)
+        eval_real_dummy_camera = eval_real_dataset[0][1][0]["camera"]
+        eval_real_action_encoder = real_raw_eval_dataset.action_encoder
 
-        eval_dataset = PairedDataset(raw_dataset, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=load_presampled_pairs_path,
-                                    mode="test", p_copy=args.p_copy, apply_copy_augs=args.apply_copy_augs, sort_by_l2_distance=args.sort_by_l2_distance)
-        eval_dummy_camera = eval_dataset[0][1][0]["camera"]
+        sim_raw_dataset_for_eval = H5Dataset(dataset_location, augment_rgbds=None, augment_rgb=None, augment_text=None, augment_depth=None, 
+                                     return_depth=False, action_encoder=action_encoder)
+        sim_run_name = f"_img_{num_images_in_context}_pr_{image_order}_enc_{action_encoder}"
+        sim_load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"train_dataset_{sim_run_name}_new.pkl"
+        sim_presampled_eval_sequences_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"train_dataset_{sim_run_name}_pCopy0_pSorting0_presampled_eval_sequences.pkl"
+
+        eval_sim_dataset = PairedDataset(sim_raw_dataset_for_eval, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=sim_load_presampled_pairs_path,
+                                    mode="test", p_copy=0, apply_copy_augs=False, p_sort_by_l2_distance=0, 
+                                    sort_criteria=args.sort_criteria, presampled_path=sim_presampled_eval_sequences_path)
+        
+        eval_sim_dummy_camera = eval_sim_dataset[0][1][0]["camera"]
+        eval_sim_action_encoder = sim_raw_dataset_for_eval.action_encoder
+
     else:
-        raise ValueError("Unknown conditioning {args.conditioning}")
-    
-    print("dataset_location:", dataset_location, "samples:", len(train_dataset))
+        raise ValueError(f"Unknown conditioning type: {args.conditioning}")
 
-    return train_dataset, eval_dataset, run_name, eval_dummy_camera
+    print("dataset_location:", dataset_location,"samples:", len(raw_dataset), "paired_samples:", len(train_dataset))
+
+    return train_dataset, eval_sim_dataset, eval_real_dataset, run_name, eval_sim_dummy_camera,  eval_real_dummy_camera, raw_dataset.action_encoder, eval_sim_action_encoder, eval_real_action_encoder
 
 
 def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
@@ -354,44 +441,68 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
 
 def get_args():
     parser = argparse.ArgumentParser()
+
+    # model and task specific options
     parser.add_argument("--model_id", type=str, default="google/paligemma2-3b-pt-224")
     parser.add_argument("--conditioning", type=str, choices=["text", "trajectory"], default="text")
-    parser.add_argument("--action_encoder", type=str, choices=["xyzrotvec-cam-512xy128d",], default="xyzrotvec-cam-512xy128d")
+    parser.add_argument("--action_encoder", type=str, default="xyzrotvec-cam-512xy128d", 
+                        choices=["xyzrotvec-cam-512xy128d", "xyzrotvec-cam-1024xy", "xyzrotvec-cam-proj2", "xyzrotvec-cam-512xy", 
+                                 "xyzrotvec-cam-256xy", "xyzrotvec-cam-128xy", "xyzrotvec-cam-512xy256d" ], help="Encoder to use for the model")
     parser.add_argument("--depth", action="store_true")
-    parser.add_argument("--extra_run_name", type=str, default="debug")
-    parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--batch_size_dev", type=int, default=4)
-    parser.add_argument("--p_background", type=float, default=0.2)
-    parser.add_argument("--num_repeats", type=int, default=1)
-    parser.add_argument("--checkpoint", type=str, default=None)
-    parser.add_argument("--no_augs", action="store_true")
     parser.add_argument("--max_tokens", type=int, default=12, help="Max tokens for generation (basically sequence length)")
-    parser.add_argument("--lr", type=float, default=3e-5)
-    parser.add_argument("--warmup_ratio", type=float, default=0.05)
+    parser.add_argument("--dataset_version", type=str, choices=["clevr_only", "mix30obj"], default="mix30obj", help="Dataset version to use")
+    
+    # augmentation options
+    parser.add_argument("--p_background", type=float, default=0.2)
+    parser.add_argument("--no_augs", action="store_true")
+    
+    # save and eval options
+    parser.add_argument("--extra_run_name", type=str, default="debug")
     parser.add_argument("--save_steps", type=int, default=350)
     parser.add_argument("--save_limit", type=int, default=5)
     parser.add_argument("--save_path", type=str, default="/work/dlclarge2/bratulic-cvla/models")
     parser.add_argument("--no_eval", action="store_true", help="Do not evaluate the model")
+    parser.add_argument("--double_eval", action="store_true", help="Evaluate on both real and synthetic datasets")
+    parser.add_argument("--eval_dataset", type=str, choices=["real", "sim"], default="sim", help="Dataset to evaluate on")
+    parser.add_argument("--data_location", type=str, default="/work/dlclarge2/bratulic-cvla/")
     
     # demo-specific options
     parser.add_argument("--num_images_in_context", type=int, default=1)
     parser.add_argument("--image_order", type=str, choices=["interleaved", "images_first"], default="interleaved")
     parser.add_argument("--p_copy", type=float, default=0.0, help="Percentage of pairs with direct copy of images in context")
     parser.add_argument("--apply_copy_augs", action="store_true", help="Apply augmentations to the copy of the images in context")
-    parser.add_argument("--sort_by_l2_distance", action="store_true", help="Sort the images in context by L2 distance to the query image")
+    parser.add_argument("--p_sort_by_l2_distance", type=float, default=0.0, help="Sort the images in context by L2 distance to the query image for some percentage")
+    parser.add_argument("--sort_criteria", type=str, choices=["camera_position", "trajectory_shape"], default="camera_position", help="Sort the images in context by camera position or trajectory shape")
+    
+    # optimization options
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--batch_size_dev", type=int, default=4)
+    parser.add_argument("--max_steps", type=int, default=-1, help="Max steps for training, -1 for using one epoch of defined data")
+    parser.add_argument("--num_repeats", type=int, default=1)
+    parser.add_argument("--checkpoint", type=str, default=None)
+    parser.add_argument("--lr", type=float, default=3e-5)
+    parser.add_argument("--warmup_ratio", type=float, default=0.05)
+    parser.add_argument("--ft_more_params", action="store_true", help="Fine-tune more parameters in the model")
+    
+
 
     return parser.parse_args()
 
 def main():
-    # SETTING UP THE PATHS AND ARGS
-    #dataset_location = Path("/tmp/clevr-act-7-depth")
-    dataset_location = "mix30obj"
     current_time =  datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     args = get_args()
 
-    load_data_to_node()
+    if args.dataset_version == "mix30obj":
+        dataset_location = "/tmp/mix30obj"
+    elif args.dataset_version == "clevr_only":
+        dataset_location = "/tmp/clevr-act-7-depth"
+    else:
+        raise ValueError(f"Unknown dataset version: {args.dataset_version}")
 
-    train_dataset, eval_dataset, run_name, eval_dummy_camera = get_datasets(args, dataset_location)
+    load_data_to_node(args.data_location)
+
+    # SETTING UP THE DATASETS
+    train_dataset, eval_sim_dataset, eval_real_dataset, run_name, eval_sim_dummy_camera, eval_real_dummy_camera, action_encoder, eval_sim_action_encoder, eval_real_action_encoder = get_datasets(args, dataset_location)
     
     # SETTING UP THE SAVE PATHS
     save_path_final = Path(args.save_path) / (str(Path(dataset_location).stem) + run_name + "_" + current_time)
@@ -404,7 +515,7 @@ def main():
     collate_fn = get_collate_fn(processor, args.num_images_in_context, args.image_order, TORCH_DTYPE, args, DEVICE)
 
     # SETTING UP THE TRAINER
-    trainer = get_trainer(args, model, processor, train_dataset, eval_dataset, collate_fn, save_path, eval_dummy_camera)
+    trainer = get_trainer(args, model, processor, train_dataset, eval_sim_dataset, eval_real_dataset, collate_fn, save_path, eval_sim_dummy_camera, eval_real_dummy_camera, action_encoder, eval_sim_action_encoder, eval_real_action_encoder)
     
     trainer.evaluate()
     # TRAINING THE MODEL
