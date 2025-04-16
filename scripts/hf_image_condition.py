@@ -419,7 +419,7 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
     # DATA COPY-PASTING AND CHECK
     if not os.path.exists('/tmp/indoorCVPR'):
         cmd1 = (
-        "rsync -a --progress {data_location}/indoorCVPR_09.tar /tmp/ && "
+        f"rsync -a --progress {data_location}/indoorCVPR_09.tar /tmp/ && "
         "mkdir -p /tmp/indoorCVPR && "
         "tar -xf /tmp/indoorCVPR_09.tar -C /tmp/indoorCVPR"
         )
@@ -429,10 +429,12 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
         cmd3 = "file /tmp/indoorCVPR"
         result1 = subprocess.run(cmd3, shell=True, check=True, capture_output=True, text=True)
         print(result1.stdout)
+    else:
+        print('Data already copied.')
 
     if not os.path.exists('/tmp/clevr-act-7-depth'):
         # Command 2: Copy the second dataset directory
-        cmd2 = "rsync -a --progress {data_location}/clevr-act-7-depth /tmp/"
+        cmd2 = f"rsync -a --progress {data_location}/clevr-act-7-depth /tmp/"
         subprocess.run(cmd2, shell=True, check=True)
 
         # Command 4: Check file type for /tmp/clevr-act-7-depth
@@ -444,6 +446,19 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
         #!rsync -a --progress /data/lmbraid19/argusm/datasets/clevr-act-7-depth /tmp/
         #!file /tmp/indoorCVPR
         #!file /tmp/clevr-act-7-depth
+    else:
+        print('Data already copied.')
+
+
+    if not os.path.exists('/tmp/cvla-7-obja'):
+        # Command 2: Copy the second dataset directory
+        cmd5 = f"rsync -a --progress {data_location}/cvla-7-obja /tmp/"
+        subprocess.run(cmd5, shell=True, check=True)
+
+        # Command 4: Check file type for /tmp/clevr-act-7-depth
+        cmd6 = "file /tmp/cvla-7-obja"
+        result3 = subprocess.run(cmd6, shell=True, check=True, capture_output=True, text=True)
+        print(result3.stdout)
     else:
         print('Data already copied.')
 
