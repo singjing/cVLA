@@ -354,7 +354,7 @@ def get_datasets(args, dataset_location):
                                  augment_rgbds=None, augment_rgb=None, augment_text=None, augment_depth=None)
         eval_sim_dummy_camera = eval_sim_dataset[0][1]["camera"]
         eval_sim_action_encoder = None
-        eval_dataset_location  = Path("/data/lmbraid19/argusm/datasets/clevr-real-block-simple-v4")
+        eval_dataset_location  = Path("/data/lmbraid19/argusm/datasets/cvla-droid-block-simple-v4")
         eval_real_dataset = JSONLDataset(
             jsonl_file_path=f"{eval_dataset_location}/_annotations.valid.jsonl",
             image_directory_path=f"{eval_dataset_location}/dataset",
@@ -376,7 +376,7 @@ def get_datasets(args, dataset_location):
                                     mode="train", p_copy=args.p_copy, apply_copy_augs=args.apply_copy_augs, p_sort_by_l2_distance=args.p_sort_by_l2_distance, 
                                     sort_criteria=args.sort_criteria, presampled_path=None)
         
-        eval_dataset_location  = Path("/data/lmbraid19/argusm/datasets/clevr-real-block-simple-v4")
+        eval_dataset_location  = Path("/data/lmbraid19/argusm/datasets/cvla-droid-block-simple-v4")
         eval_run_name = f"_img_{num_images_in_context}_pr_{image_order}_enc_xyzrotvec-cam-1024xy"
         eval_real_load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{eval_dataset_location.name}_dataset_{eval_run_name}_new.pkl"
         presampled_eval_sequences_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{eval_dataset_location.name}_{eval_run_name}_pCopy0_pSorting0_presampled_eval_sequences.pkl"

@@ -16,28 +16,6 @@ def get_standard_camera(image_height, image_width):
     camera = DummyCamera(camera_intrinsic, camera_extrinsic, width=image_width, height=image_height)
     return camera
 
-def extract_extrinsics(pose: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Takes a vector [tx ty tz qw qx qy qz]
-    return: translation vector (3) and rotation matrix (3, 3)
-    """
-    translation = pose[:3]
-    rotation = Rotation.from_quat(np.array(pose[3:]), scalar_first=True).as_matrix()
-    return (translation, rotation)
-
-def local_to_world(t, rot):
-    """
-    Extrinsic matrix C from local coordinates to world coordinates.
-    First apply rotation, then translation.
-    t: (3) translation, world coordinates of local center
-    rot: (3,3) rotation
-    return: (4,4)
-    """
-    ext = np.eye(4)
-    ext[0:3, 0:3] = rot
-    ext[0:3, 3] = t
-    return ext
-
 def transform_3d(point_3d: np.ndarray, mat: np.ndarray):
     """ 
     Multiply point by transformation matrix in 3D in homogenous coordinates.
@@ -51,50 +29,45 @@ def transform_3d(point_3d: np.ndarray, mat: np.ndarray):
     res = res / res[3] # remove homogeneous coordinate
     return res[:3]
 
-def draw_coordinate_frame(label, camera, enc, ax):
-    # === draw axis frame
-    # curve shape (B, N, X Y Z) in camera 3D space
-    # quat shape (B, N, qw qx qy qz)
+def draw_coordinate_frame(label, camera, enc, ax, axis_length=0.1):
+    """
+    Draws a coordinate frame on a Matplotlib axis for each point in a trajectory.
+
+    Parameters:
+        label: Input label for decoding.
+        camera: Camera model with intrinsics.
+        enc: Encoder/decoder that provides trajectory poses.
+        ax: Matplotlib axis to draw on.
+        axis_length: Length of the axis lines (default is 0.1 meters).
+    """
+    # TODO(max): this is maxims bad code, should use same functions as utils_trajectory.py
+    # Decode 3D trajectory (positions and quaternions)
     curve_w, quat_w = enc.decode_trajectory(label, camera)
 
-    # coordinate frame
-    dist = 0.1
-    c = np.array([0, 0, 0])
-    x = np.array([dist, 0, 0])
-    y = np.array([0, dist, 0])
-    z = np.array([0, 0, dist])
+    # Define local coordinate frame axes
+    origin = np.array([0, 0, 0])
+    x_axis = np.array([axis_length, 0, 0])
+    y_axis = np.array([0, axis_length, 0])
+    z_axis = np.array([0, 0, axis_length])
 
-    # get transform from TCP coors to camera 3D
-    pose = np.array([
-        curve_w[0, 0, 0], # x
-        curve_w[0, 0, 1], # y
-        curve_w[0, 0, 2], # z
-        quat_w[0, 0, 0], # qw
-        quat_w[0, 0, 1], # qx
-        quat_w[0, 0, 2], # qy
-        quat_w[0, 0, 3] # qz
-    ])
-    t, rot = extract_extrinsics(pose) # (3), (3, 3)
-    tcp_transform = local_to_world(t, rot) # (4, 4)
-
-    # apply 3D transform
-    c = transform_3d(c, tcp_transform) # (xyz)
-    x = transform_3d(x, tcp_transform)
-    y = transform_3d(y, tcp_transform)
-    z = transform_3d(z, tcp_transform)
-
-    # project with intrinsic
-    points_3d = np.stack((c, x, y, z))[None, :, :] # (xyz) -> (1, 4, xyz)
-    points_2d = project_points(camera, convert_to_tensor(points_3d))
-    points_2d = points_2d[0, :, :2]
-
-    c = points_2d[0]
-    x = points_2d[1]
-    y = points_2d[2]
-    z = points_2d[3]
-    ax.plot((c[0], x[0]), (c[1], x[1]), '.-', color='red')
-    ax.plot((c[0], y[0]), (c[1], y[1]), '.-', color='green')
-    ax.plot((c[0], z[0]), (c[1], z[1]), '.-', color='blue')
+    num_keypoints = curve_w.shape[1]
+    for i in range(num_keypoints):
+        # Extract pose as [x, y, z, qw, qx, qy, qz]
+        pose = np.hstack([curve_w[0, i], quat_w[0, i]])
+        transform = np.eye(4)
+        transform[0:3, 3] = pose[:3]
+        transform[0:3, 0:3] = Rotation.from_quat(np.array(pose[3:]), scalar_first=True).as_matrix()
+        points_world = np.stack([
+            transform_3d(origin, transform),
+            transform_3d(x_axis, transform),
+            transform_3d(y_axis, transform),
+            transform_3d(z_axis, transform)
+        ])[None]  # Shape (1, 4, 3)
+        points_2d = project_points(camera, convert_to_tensor(points_world))[0, :, :2]
+        c, x, y, z = points_2d
+        ax.plot([c[0], x[0]], [c[1], x[1]], '.-', color='red')
+        ax.plot([c[0], y[0]], [c[1], y[1]], '.-', color='green')
+        ax.plot([c[0], z[0]], [c[1], z[1]], '.-', color='blue')
 
 def draw_probas_edge(image, pred_scores):
     # pred_scores: see render_example documentation
@@ -171,16 +144,18 @@ def render_example(image, label: str=None, prediction: str=None, camera=None, en
     if draw_state_coords:
         robot_state = text.split(" ")[-1]
         draw_coordinate_frame(robot_state, camera, enc_label, ax)        
-        
+    
+    curve_25d, quat_c = None, None
     try:
         curve_25d, quat_c = enc_label.decode_caption(label, camera) 
+    except (ValueError, TypeError):
+        pass
+    if curve_25d is not None:
         curve_2d  = curve_25d[:, :2]
         ax.plot(curve_2d[:, 0], curve_2d[:, 1],'.-', color='green')
         if draw_label_coords:
             draw_coordinate_frame(label, camera, enc_label, ax)            
-    except (ValueError, TypeError):
-        pass
-
+    
     html_text = ""
     if text:
        html_text = f'{html.escape("text: "+text)}'

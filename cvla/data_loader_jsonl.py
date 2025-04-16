@@ -7,6 +7,7 @@ import torch
 from PIL import Image
 from pathlib import Path
 from torch.utils.data import Dataset
+from scipy.spatial.transform import Rotation as R
 
 from mani_skill.utils.structs.pose import Pose
 from cvla.utils_trajectory import DummyCamera
@@ -38,6 +39,12 @@ class JSONLDataset(Dataset):
         self.jsonl_file_path = jsonl_file_path
         self.image_directory_path = image_directory_path
         self.entries = self._load_entries(jsonl_file_path)
+
+        if "-droid-" in str(self.dataset_path):
+            dataset_orn = R.from_euler("xyz", (180,0, 90), degrees=True)
+            self.dataset_orn_offset = Pose.create_from_pq(q=dataset_orn.as_quat(scalar_first=True))
+        else:
+            raise NotImplementedError(f"dataset_orn_offset not implemented for {self.dataset_path}, double check with dataset_compare.ipynb")
 
         random.seed(seed)
         indexes_all = np.arange(len(self.entries))
@@ -92,8 +99,8 @@ class JSONLDataset(Dataset):
         camera = DummyCamera(label["camera_intrinsic"], label["camera_extrinsic"], width, height)
         obj_start_pose = Pose(raw_pose=torch.tensor(label["obj_start_pose"]))
         obj_end_pose = Pose(raw_pose=torch.tensor(label["obj_end_pose"]))
-        grasp_pose = Pose(raw_pose=torch.tensor(label["grasp_pose"]))
-        tcp_pose = Pose(raw_pose=torch.tensor(label["tcp_start_pose"]))
+        grasp_pose = Pose(raw_pose=torch.tensor(label["grasp_pose"])) * self.dataset_orn_offset
+        tcp_pose = Pose(raw_pose=torch.tensor(label["tcp_start_pose"])) * self.dataset_orn_offset
         action_text = label["action_text"]
         enc_traj = self.action_encoder.encode_trajectory
         prefix, suffix, _, _, info = to_prefix_suffix(obj_start_pose, obj_end_pose, camera, grasp_pose, tcp_pose, action_text, enc_traj, robot_pose=None)

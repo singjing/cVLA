@@ -236,7 +236,7 @@ if __name__ == "__main__":
     from data_loader_jsonl import JSONLDataset
 
     # define paths
-    dataset_location = "/data/lmbraid19/argusm/datasets/clevr-real-block-simple-v3"
+    dataset_location = "/data/lmbraid19/argusm/datasets/cvla-droid-block-simple-v3"
     model_location = Path("/data/lmbraid19/argusm/models/")
     model_path = model_location / "clevr-act-7-depth_depthaug" / "checkpoint-4687"    
 

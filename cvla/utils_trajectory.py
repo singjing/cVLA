@@ -3,7 +3,6 @@ This file is supposed to have utils for generating trajectories, meaning geometr
 """
 import numpy as np
 import torch
-from matplotlib import cm
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 

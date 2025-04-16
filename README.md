@@ -70,7 +70,7 @@ conda activate paligemma
 cd /ihome/argusm/lang/cVLA/
 jupyter-lab hf_finetune_paligemma2-l40.ipynb
 # copy files in notebook not, ssh.
-rsync -a --progress /data/lmbraid19/argusm/datasets/clevr-real-1of5c-v1 /tmp/
+rsync -a --progress /data/lmbraid19/argusm/datasets/cvla-droid-1of5c-v1 /tmp/
 rsync -a --progress /data/lmbraid19/argusm/datasets/clevr-act-7-depth /tmp/
 ssh -L 8890:localhost:8888 argusm@dlc2gpu08  # ssh -L local_port:remote_host:remote_port user@remote_server
 ```
