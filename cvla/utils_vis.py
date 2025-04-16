@@ -156,7 +156,7 @@ def render_example(image, label: str=None, prediction: str=None, camera=None, en
     # logic for when to draw coords
     draw_state_coords = True
     draw_pred_coords = True
-    draw_label_coords = False
+    draw_label_coords = True
     if prediction is not None:
         draw_label_coords = False
 

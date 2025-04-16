@@ -470,7 +470,7 @@ def get_args():
     parser.add_argument("--model_id", type=str, default="google/paligemma2-3b-pt-224")
     parser.add_argument("--conditioning", type=str, choices=["text", "trajectory"], default="text")
     parser.add_argument("--action_encoder", type=str, default="xyzrotvec-cam-512xy128d", 
-                        choices=["xyzrotvec-cam-512xy128d", "xyzrotvec-cam-1024xy", "xyzrotvec-cam-proj2", "xyzrotvec-cam-512xy", 
+                        choices=["xyzrotvec-cam-512xy128d", "xyzrotvec-cam-1024xy", "xyzrotvec-cam-512xy", 
                                  "xyzrotvec-cam-256xy", "xyzrotvec-cam-128xy", "xyzrotvec-cam-512xy256d" ], help="Encoder to use for the model")
     parser.add_argument("--depth", action="store_true")
     parser.add_argument("--max_tokens", type=int, default=12, help="Max tokens for generation (basically sequence length)")
