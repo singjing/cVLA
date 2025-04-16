@@ -23,7 +23,9 @@ from cvla.data_augmentations import augment_image_rgb, RandomizeBackgrounds, com
 
 class MultiEvalSeq2SeqTrainer(Seq2SeqTrainer):
     def evaluate(self, eval_dataset=None, metric_key_prefix="eval", **kwargs):
-        # Evaluate on synthetic dataset (default eval_dataset)
+        original_compute_metrics = self.compute_metrics  # Save original
+
+        # Evaluate on synthetic (default) dataset
         self.compute_metrics = self.compute_metrics_sim
         metrics_synth = super().evaluate(
             eval_dataset=eval_dataset,
@@ -31,20 +33,27 @@ class MultiEvalSeq2SeqTrainer(Seq2SeqTrainer):
             **kwargs,
         )
 
-        # Evaluate on real dataset if it's set
-        if hasattr(self, "eval_dataset_real"):
-            self.compute_metrics = self.compute_metrics_real
-            metrics_real = super().evaluate(
-                eval_dataset=self.eval_dataset_real,
+        metrics_all = metrics_synth.copy()
+
+        # Optional: Evaluate on real dataset using prediction_loop
+        if hasattr(self, "eval_dataset_real") and self.eval_dataset_real is not None:
+            eval_dataloader = self.get_eval_dataloader(self.eval_dataset_real)
+            output = self.prediction_loop(
+                eval_dataloader,
+                description="Evaluation on real dataset",
+                prediction_loss_only=False,
                 metric_key_prefix="eval_data_real",
-                **kwargs,
             )
-            metrics_synth.update(metrics_real)
 
-        print("metrics_synth:", metrics_synth)
+            real_metrics = self.compute_metrics_real((output.predictions, output.label_ids))
+            real_metrics = {f"eval_data_real_{k}": v for k, v in real_metrics.items()}
+            metrics_all.update(real_metrics)
 
-        return metrics_synth
+            print(real_metrics)
 
+        self.compute_metrics = original_compute_metrics  # Restore
+
+        return metrics_all
 
 
 def extract_tokens(text):
@@ -260,7 +269,7 @@ def get_trainer(args, model, processor, train_dataset, eval_sim_dataset, eval_re
         do_eval=not args.no_eval,
     )
 
-    # TODO: Something does not work properly with dual evaluation
+
     if args.double_eval:
         trainer = MultiEvalSeq2SeqTrainer(
             model=model,
@@ -517,12 +526,12 @@ def main():
     # SETTING UP THE TRAINER
     trainer = get_trainer(args, model, processor, train_dataset, eval_sim_dataset, eval_real_dataset, collate_fn, save_path, eval_sim_dummy_camera, eval_real_dummy_camera, action_encoder, eval_sim_action_encoder, eval_real_action_encoder)
     
-    trainer.evaluate()
+    #trainer.evaluate()
     # TRAINING THE MODEL
-    try:
-        trainer.train()
-    except KeyboardInterrupt:
-        print("Training interrupted")
+    #try:
+    trainer.train()
+    #except KeyboardInterrupt:
+    #    print("Training interrupted")
     
     # TRANSFER THE MODEL TO FINAL LOCATION
     os.system(f"mv {save_path}/* {save_path_final}/")
