@@ -1,12 +1,12 @@
 import os
 import re
+import json
 import torch
 import random
+import getpass
 import argparse
 import subprocess
 import numpy as np
-import json
-
 from pathlib import Path
 from datetime import datetime
 from torchvision import transforms
@@ -341,6 +341,8 @@ def get_datasets(args, dataset_location):
         dataset2 = H5Dataset(dataset_location2, return_depth=return_depth, action_encoder=action_encoder, limit_samples=50_000,
                              augment_rgbds=augment_rgbds, augment_rgb=augment_rgb, augment_text=augment_text, augment_depth=augment_depth)
         raw_dataset = ConcatDataset([dataset1, dataset2])
+        assert dataset1.action_encoder.NAME == dataset2.action_encoder.NAME, f"Action encoders are different: {dataset1.action_encoder.NAME} vs {dataset2.action_encoder.NAME}"
+        raw_dataset.action_encoder = dataset1.action_encoder
         dataset_location = "/tmp/clevr-act-7-depth"  # so that eval dataset can be loaded
     else:
         raw_dataset = H5Dataset(dataset_location, return_depth=return_depth, action_encoder=action_encoder,
@@ -350,17 +352,15 @@ def get_datasets(args, dataset_location):
         run_name = f"_text_lr{args.lr}" + args.extra_run_name
         train_dataset = raw_dataset
         
-        eval_sim_dataset = H5Dataset(dataset_location, return_depth=return_depth, action_encoder=action_encoder, limit_samples=200,
-                                 augment_rgbds=None, augment_rgb=None, augment_text=None, augment_depth=None)
+        eval_sim_dataset = H5Dataset(dataset_location, action_encoder=action_encoder, return_depth=return_depth, limit_samples=200,
+                                     augment_rgbds=None, augment_rgb=None, augment_text=None, augment_depth=None)
         eval_sim_dummy_camera = eval_sim_dataset[0][1]["camera"]
         eval_sim_action_encoder = None
         eval_dataset_location  = Path("/data/lmbraid19/argusm/datasets/cvla-droid-block-simple-v4")
-        eval_real_dataset = JSONLDataset(
-            jsonl_file_path=f"{eval_dataset_location}/_annotations.valid.jsonl",
-            image_directory_path=f"{eval_dataset_location}/dataset",
-            clean_prompt=True,
-            return_depth=False,
-        )
+        train_ratio = 0.0 if "droid-block" in str(eval_dataset_location) else 0.8
+        eval_real_dataset = JSONLDataset(jsonl_file_path=eval_dataset_location, action_encoder=action_encoder,
+                                         clean_prompt=True, return_depth=False, split="valid", train_ratio=train_ratio)
+
         eval_real_dummy_camera = eval_real_dataset[0][1]["camera"]
         eval_real_action_encoder = eval_real_dataset.action_encoder
 
@@ -377,16 +377,13 @@ def get_datasets(args, dataset_location):
                                     sort_criteria=args.sort_criteria, presampled_path=None)
         
         eval_dataset_location  = Path("/data/lmbraid19/argusm/datasets/cvla-droid-block-simple-v4")
+        train_ratio = 0.0 if "droid-block" in str(eval_dataset_location) else 0.8
+        real_raw_eval_dataset = JSONLDataset(jsonl_file_path=eval_dataset_location, clean_prompt=True, return_depth=False, split="valid", train_ratio=train_ratio)
+        
         eval_run_name = f"_img_{num_images_in_context}_pr_{image_order}_enc_xyzrotvec-cam-1024xy"
         eval_real_load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{eval_dataset_location.name}_dataset_{eval_run_name}_new.pkl"
         presampled_eval_sequences_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{eval_dataset_location.name}_{eval_run_name}_pCopy0_pSorting0_presampled_eval_sequences.pkl"
         
-        real_raw_eval_dataset = JSONLDataset(
-                jsonl_file_path=f"{eval_dataset_location}/_annotations.valid.jsonl",
-                image_directory_path=f"{eval_dataset_location}/dataset",
-                clean_prompt=True,
-                return_depth=False,
-            )
         
         eval_real_dataset = PairedDataset(real_raw_eval_dataset, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=eval_real_load_presampled_pairs_path,
                                     mode="test", p_copy=0, apply_copy_augs=False, p_sort_by_l2_distance=0, 
@@ -409,6 +406,9 @@ def get_datasets(args, dataset_location):
 
     else:
         raise ValueError(f"Unknown conditioning type: {args.conditioning}")
+    
+    assert train_dataset.action_encoder.NAME == eval_sim_dataset.action_encoder.NAME, f"Action encoders are different: {train_dataset.action_encoder.NAME} vs {eval_sim_dataset.action_encoder.NAME}"
+    assert train_dataset.action_encoder.NAME == eval_real_dataset.action_encoder.NAME, f"Action encoders are different: {train_dataset.action_encoder.NAME} vs {eval_real_dataset.action_encoder.NAME}"
 
     print("dataset_location:", dataset_location,"samples:", len(raw_dataset), "paired_samples:", len(train_dataset))
 
@@ -530,7 +530,7 @@ def main():
     
     # SETTING UP THE SAVE PATHS
     save_path_final = Path(args.save_path) / (str(Path(dataset_location).stem) + run_name + "_" + current_time)
-    save_path = Path("/tmp/cvla") / (str(Path(dataset_location).stem) + run_name + "_" + current_time)
+    save_path = Path(f"/tmp/cvla_{getpass.getuser()}") / (str(Path(dataset_location).stem) + run_name + "_" + current_time)
     save_hyperparams(save_path_final, save_path, args)
 
     # SETTING UP THE MODEL
