@@ -369,7 +369,8 @@ def get_datasets(args, dataset_location):
         image_order = args.image_order
 
         run_name = f"_img_{num_images_in_context}_pr_{image_order}_enc_{action_encoder}"
-        load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"train_dataset_{run_name}_new.pkl"
+        eval_run_name = run_name
+        load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"cvla-clevr-8_{run_name}_new.pkl"
         run_name += f"maxTokens{args.max_tokens}_lr{args.lr}" + args.extra_run_name  
 
         train_dataset = PairedDataset(raw_dataset, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=load_presampled_pairs_path,
@@ -377,12 +378,11 @@ def get_datasets(args, dataset_location):
                                     sort_criteria=args.sort_criteria, presampled_path=None)
         
         eval_dataset_location  = Path("/data/lmbraid19/argusm/datasets/cvla-droid-block-simple-v4")
-        train_ratio = 0.0 if "droid-block" in str(eval_dataset_location) else 0.8
-        real_raw_eval_dataset = JSONLDataset(jsonl_file_path=eval_dataset_location, clean_prompt=True, return_depth=False, split="valid", train_ratio=train_ratio)
-        
-        eval_run_name = f"_img_{num_images_in_context}_pr_{image_order}_enc_xyzrotvec-cam-1024xy"
         eval_real_load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{eval_dataset_location.name}_dataset_{eval_run_name}_new.pkl"
         presampled_eval_sequences_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{eval_dataset_location.name}_{eval_run_name}_pCopy0_pSorting0_presampled_eval_sequences.pkl"
+        
+        train_ratio = 0.0 if "droid-block" in str(eval_dataset_location) else 0.8
+        real_raw_eval_dataset = JSONLDataset(jsonl_file_path=eval_dataset_location, clean_prompt=True, return_depth=False, split="valid", train_ratio=train_ratio)
         
         
         eval_real_dataset = PairedDataset(real_raw_eval_dataset, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=eval_real_load_presampled_pairs_path,
@@ -393,9 +393,8 @@ def get_datasets(args, dataset_location):
 
         sim_raw_dataset_for_eval = H5Dataset(dataset_location, augment_rgbds=None, augment_rgb=None, augment_text=None, augment_depth=None, 
                                      return_depth=False, action_encoder=action_encoder)
-        sim_run_name = f"_img_{num_images_in_context}_pr_{image_order}_enc_{action_encoder}"
-        sim_load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"train_dataset_{sim_run_name}_new.pkl"
-        sim_presampled_eval_sequences_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"train_dataset_{sim_run_name}_pCopy0_pSorting0_presampled_eval_sequences.pkl"
+        sim_load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"cvla-clevr-8_{eval_run_name}_new.pkl"
+        sim_presampled_eval_sequences_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"cvla-clevr-8_{eval_run_name}_pCopy0_pSorting0_presampled_eval_sequences.pkl"
 
         eval_sim_dataset = PairedDataset(sim_raw_dataset_for_eval, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=sim_load_presampled_pairs_path,
                                     mode="test", p_copy=0, apply_copy_augs=False, p_sort_by_l2_distance=0, 
@@ -425,7 +424,6 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
         )
         subprocess.run(cmd1, shell=True, check=True)
 
-        # Command 3: Check file type for /tmp/indoorCVPR
         cmd3 = "file /tmp/indoorCVPR"
         result1 = subprocess.run(cmd3, shell=True, check=True, capture_output=True, text=True)
         print(result1.stdout)
@@ -433,29 +431,20 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
         print('Data already copied.')
 
     if not os.path.exists('/tmp/cvla-clevr-8'):
-        # Command 2: Copy the second dataset directory
         cmd2 = f"rsync -a --progress {data_location}/cvla-clevr-8/ /tmp/cvla-clevr-8/"
         subprocess.run(cmd2, shell=True, check=True)
 
-        # Command 4: Check file type for /tmp/clevr-act-7-depth
         cmd4 = "file /tmp/cvla-clevr-8"
         result2 = subprocess.run(cmd4, shell=True, check=True, capture_output=True, text=True)
         print(result2.stdout)
-
-        #!rsync -a --progress /data/lmbraid19/argusm/datasets/indoorCVPR.tar /tmp/ && mkdir -p /tmp/indoorCVPR && tar -xf /tmp/indoorCVPR.tar -C /tmp/indoorCVPR
-        #!rsync -a --progress /data/lmbraid19/argusm/datasets/clevr-act-7-depth /tmp/
-        #!file /tmp/indoorCVPR
-        #!file /tmp/clevr-act-7-depth
     else:
         print('Data already copied.')
 
 
     if not os.path.exists('/tmp/cvla-obja-8'):
-        # Command 2: Copy the second dataset directory
         cmd5 = f"rsync -a --progress {data_location}/cvla-obja-8/ /tmp/cvla-obja-8/"
         subprocess.run(cmd5, shell=True, check=True)
 
-        # Command 4: Check file type for /tmp/clevr-act-7-depth
         cmd6 = "file /tmp/cvla-obja-8"
         result3 = subprocess.run(cmd6, shell=True, check=True, capture_output=True, text=True)
         print(result3.stdout)
@@ -543,10 +532,10 @@ def main():
     
     #trainer.evaluate()
     # TRAINING THE MODEL
-    #try:
-    trainer.train()
-    #except KeyboardInterrupt:
-    #    print("Training interrupted")
+    try:
+        trainer.train()
+    except:
+        print("Training interrupted")
     
     # TRANSFER THE MODEL TO FINAL LOCATION
     os.system(f"mv {save_path}/* {save_path_final}/")
