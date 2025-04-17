@@ -334,14 +334,14 @@ def get_datasets(args, dataset_location):
     
     if "mix30obj" in dataset_location:
         from torch.utils.data import ConcatDataset
-        dataset_location1 = "/tmp/clevr-act-7-depth"
-        dataset_location2 = "/tmp/cvla-7-obja"
+        dataset_location1 = "/tmp/cvla-clevr"
+        dataset_location2 = "/tmp/cvla-obja"
         dataset1 = H5Dataset(dataset_location1, return_depth=return_depth, action_encoder=action_encoder, limit_samples=100_000,
                              augment_rgbds=augment_rgbds, augment_rgb=augment_rgb, augment_text=augment_text, augment_depth=augment_depth)
         dataset2 = H5Dataset(dataset_location2, return_depth=return_depth, action_encoder=action_encoder, limit_samples=50_000,
                              augment_rgbds=augment_rgbds, augment_rgb=augment_rgb, augment_text=augment_text, augment_depth=augment_depth)
         raw_dataset = ConcatDataset([dataset1, dataset2])
-        dataset_location = "/tmp/clevr-act-7-depth"  # so that eval dataset can be loaded
+        dataset_location = "/tmp/cvla-clevr"  # so that eval dataset can be loaded
     else:
         raw_dataset = H5Dataset(dataset_location, return_depth=return_depth, action_encoder=action_encoder,
                                 augment_rgbds=augment_rgbds, augment_rgb=augment_rgb, augment_text=augment_text, augment_depth=augment_depth)
@@ -432,13 +432,13 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
     else:
         print('Data already copied.')
 
-    if not os.path.exists('/tmp/clevr-act-7-depth'):
+    if not os.path.exists('/tmp/cvla-clevr'):
         # Command 2: Copy the second dataset directory
-        cmd2 = f"rsync -a --progress {data_location}/clevr-act-7-depth /tmp/"
+        cmd2 = f"rsync -a --progress {data_location}/cvla-clevr-8/ /tmp/cvla-clevr/"
         subprocess.run(cmd2, shell=True, check=True)
 
         # Command 4: Check file type for /tmp/clevr-act-7-depth
-        cmd4 = "file /tmp/clevr-act-7-depth"
+        cmd4 = "file /tmp/cvla-clevr"
         result2 = subprocess.run(cmd4, shell=True, check=True, capture_output=True, text=True)
         print(result2.stdout)
 
@@ -450,13 +450,13 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
         print('Data already copied.')
 
 
-    if not os.path.exists('/tmp/cvla-7-obja'):
+    if not os.path.exists('/tmp/cvla-obja'):
         # Command 2: Copy the second dataset directory
-        cmd5 = f"rsync -a --progress {data_location}/cvla-7-obja /tmp/"
+        cmd5 = f"rsync -a --progress {data_location}/cvla-obja-8/ /tmp/cvla-obja/"
         subprocess.run(cmd5, shell=True, check=True)
 
         # Command 4: Check file type for /tmp/clevr-act-7-depth
-        cmd6 = "file /tmp/cvla-7-obja"
+        cmd6 = "file /tmp/cvla-obja"
         result3 = subprocess.run(cmd6, shell=True, check=True, capture_output=True, text=True)
         print(result3.stdout)
     else:
@@ -519,7 +519,7 @@ def main():
     if args.dataset_version == "mix30obj":
         dataset_location = "/tmp/mix30obj"
     elif args.dataset_version == "clevr_only":
-        dataset_location = "/tmp/clevr-act-7-depth"
+        dataset_location = "/tmp/cvla-clevr"
     else:
         raise ValueError(f"Unknown dataset version: {args.dataset_version}")
 
