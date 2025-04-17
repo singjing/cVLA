@@ -382,7 +382,7 @@ def get_datasets(args, dataset_location):
         presampled_eval_sequences_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{eval_dataset_location.name}_{eval_run_name}_pCopy0_pSorting0_presampled_eval_sequences.pkl"
         
         train_ratio = 0.0 if "droid-block" in str(eval_dataset_location) else 0.8
-        real_raw_eval_dataset = JSONLDataset(jsonl_file_path=eval_dataset_location, clean_prompt=True, return_depth=False, split="valid", train_ratio=train_ratio)
+        real_raw_eval_dataset = JSONLDataset(jsonl_file_path=eval_dataset_location, clean_prompt=True, return_depth=False, split="valid", train_ratio=train_ratio, action_encoder=action_encoder)
         
         
         eval_real_dataset = PairedDataset(real_raw_eval_dataset, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=eval_real_load_presampled_pairs_path,

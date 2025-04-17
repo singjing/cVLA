@@ -40,6 +40,7 @@ class PairedDataset(Dataset):
         self.apply_copy_augs = apply_copy_augs
         self.p_sort_by_l2_distance = p_sort_by_l2_distance
         self.just_indices = False
+        self.action_encoder = raw_dataset.action_encoder
         assert self.image_order in ["interleaved", "images_first"], \
             "image_order must be either 'interleaved' or 'images_first'"
         
@@ -86,7 +87,7 @@ class PairedDataset(Dataset):
                     prefix = entry["prefix"].split("<")[0].strip()  # represents the task
                     if prefix not in self.task_lookup:
                         self.task_lookup[prefix] = {"images": [], "camera_positions": [], "trajectory_coords": []}
-                    camera_position = compute_camera_position(entry["camera_extrinsic"])
+                    camera_position = compute_camera_position(entry["camera"].extrinsic_matrix)
                     whd, _ = self.raw_dataset.action_encoder.decode_caption(entry["prefix"], entry["camera"])   # given in pixels
                     self.task_lookup[prefix]["images"].append(i)
                     self.task_lookup[prefix]["camera_positions"].append(camera_position)
