@@ -136,19 +136,19 @@ def get_compute_metrics_fn(processor, max_tokens, eval_dummy_camera, action_enco
         whole_text = []
         for i in range(len(predictions)):
             prefix_len = sum(labels[i] == -100) # first x tokens are -100, end is generated
-            decoded_preds = processor.decode(predictions[i, labels[i].shape[0]:], skip_special_tokens=True)
-            decoded_labels = processor.decode(labels[i, prefix_len:], skip_special_tokens=True)
+            # make sure we don't have any -100 token ids, because those cause failures
+            # in the decoder
+            predictions_cur = predictions[i, labels[i].shape[0]:]
+            predictions_cur[predictions_cur==-100] = processor.tokenizer.pad_token_id
+            decoded_preds = processor.decode(predictions_cur, skip_special_tokens=True)
+            labels_cur = labels[i, prefix_len:]
+            labels_cur[labels_cur==-100] = processor.tokenizer.pad_token_id
+            decoded_labels = processor.decode(labels_cur, skip_special_tokens=True)
+            # start statistics
             num_tokens_in_pred = len(extract_tokens(decoded_preds))
-            num_tokens_in_label = len(extract_tokens(decoded_labels)) 
-            if num_tokens_in_pred == num_tokens_in_label:
-                metric.append(1)
-            else:
-                metric.append(0)
-            if len(decoded_preds) == len(decoded_labels):
-                whole_text.append(1)
-            else:
-                whole_text.append(0)
-
+            num_tokens_in_label = len(extract_tokens(decoded_labels))
+            metric.append(int(num_tokens_in_pred == num_tokens_in_label))
+            whole_text.append(int(len(decoded_preds) == len(decoded_labels)))
             evaluator.evaluate(decoded_preds, decoded_labels)
 
         final_metrics = evaluator.report_stats()
@@ -334,8 +334,8 @@ def get_datasets(args, dataset_location):
     
     if "mix30obj" in dataset_location:
         from torch.utils.data import ConcatDataset
-        dataset_location1 = "/tmp/cvla-clevr"
-        dataset_location2 = "/tmp/cvla-obja"
+        dataset_location1 = "/tmp/cvla-clevr-8"
+        dataset_location2 = "/tmp/cvla-obja-8"
         dataset1 = H5Dataset(dataset_location1, return_depth=return_depth, action_encoder=action_encoder, limit_samples=100_000,
                              augment_rgbds=augment_rgbds, augment_rgb=augment_rgb, augment_text=augment_text, augment_depth=augment_depth)
         dataset2 = H5Dataset(dataset_location2, return_depth=return_depth, action_encoder=action_encoder, limit_samples=50_000,
@@ -343,7 +343,7 @@ def get_datasets(args, dataset_location):
         raw_dataset = ConcatDataset([dataset1, dataset2])
         assert dataset1.action_encoder.NAME == dataset2.action_encoder.NAME, f"Action encoders are different: {dataset1.action_encoder.NAME} vs {dataset2.action_encoder.NAME}"
         raw_dataset.action_encoder = dataset1.action_encoder
-        dataset_location = "/tmp/cvla-clevr"  # so that eval dataset can be loaded
+        dataset_location = "/tmp/cvla-clevr-8"  # so that eval dataset can be loaded
     else:
         raw_dataset = H5Dataset(dataset_location, return_depth=return_depth, action_encoder=action_encoder,
                                 augment_rgbds=augment_rgbds, augment_rgb=augment_rgb, augment_text=augment_text, augment_depth=augment_depth)
@@ -432,13 +432,13 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
     else:
         print('Data already copied.')
 
-    if not os.path.exists('/tmp/cvla-clevr'):
+    if not os.path.exists('/tmp/cvla-clevr-8'):
         # Command 2: Copy the second dataset directory
-        cmd2 = f"rsync -a --progress {data_location}/cvla-clevr-8/ /tmp/cvla-clevr/"
+        cmd2 = f"rsync -a --progress {data_location}/cvla-clevr-8/ /tmp/cvla-clevr-8/"
         subprocess.run(cmd2, shell=True, check=True)
 
         # Command 4: Check file type for /tmp/clevr-act-7-depth
-        cmd4 = "file /tmp/cvla-clevr"
+        cmd4 = "file /tmp/cvla-clevr-8"
         result2 = subprocess.run(cmd4, shell=True, check=True, capture_output=True, text=True)
         print(result2.stdout)
 
@@ -450,13 +450,13 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
         print('Data already copied.')
 
 
-    if not os.path.exists('/tmp/cvla-obja'):
+    if not os.path.exists('/tmp/cvla-obja-8'):
         # Command 2: Copy the second dataset directory
-        cmd5 = f"rsync -a --progress {data_location}/cvla-obja-8/ /tmp/cvla-obja/"
+        cmd5 = f"rsync -a --progress {data_location}/cvla-obja-8/ /tmp/cvla-obja-8/"
         subprocess.run(cmd5, shell=True, check=True)
 
         # Command 4: Check file type for /tmp/clevr-act-7-depth
-        cmd6 = "file /tmp/cvla-obja"
+        cmd6 = "file /tmp/cvla-obja-8"
         result3 = subprocess.run(cmd6, shell=True, check=True, capture_output=True, text=True)
         print(result3.stdout)
     else:
@@ -517,9 +517,9 @@ def main():
     args = get_args()
 
     if args.dataset_version == "mix30obj":
-        dataset_location = "/tmp/mix30obj"
+        dataset_location = "_mix30obj"
     elif args.dataset_version == "clevr_only":
-        dataset_location = "/tmp/cvla-clevr"
+        dataset_location = "/tmp/cvla-clevr-8"
     else:
         raise ValueError(f"Unknown dataset version: {args.dataset_version}")
 
