@@ -65,7 +65,7 @@ class cVLA_wrapped:
             self.conditioning = "text"
 
         if self.conditioning == "trajectory":
-            action_enoder = args.get("encoder", "xyzrotvec-cam-1024xy")
+            action_enoder = args.get("action_encoder", "xyzrotvec-cam-1024xy")
             enc_model = getActionEncInstance(action_enoder)
             return_depth = False
         else:
@@ -183,6 +183,7 @@ class cVLA_wrapped:
             max_new_tokens = 12
 
         if batch is None:   # Automatic failure if no demonstration image is found
+            print("No demonstration image found for task:", prefix)
             return [""]
         
         inputs = self.collate_fn(batch)

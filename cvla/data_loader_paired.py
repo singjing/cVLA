@@ -166,7 +166,7 @@ class PairedDataset(Dataset):
         
         # Print and plot statistics about the dataset
         print("Statistics about the paired dataset:")
-        #print(f"Number of tasks with >1 image: {len(self.task_lookup)}")
+        print(f"Number of tasks with >1 image: {len(self.task_lookup)}")
         print(f"Total number of images (across tasks): {self.paired_len}")
         if plot_statistics:
             self.plot_statistics()

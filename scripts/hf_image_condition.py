@@ -33,27 +33,21 @@ class MultiEvalSeq2SeqTrainer(Seq2SeqTrainer):
             **kwargs,
         )
 
-        metrics_all = metrics_synth.copy()
-
-        # Optional: Evaluate on real dataset using prediction_loop
+        metrics_real = {}
         if hasattr(self, "eval_dataset_real") and self.eval_dataset_real is not None:
-            eval_dataloader = self.get_eval_dataloader(self.eval_dataset_real)
-            output = self.prediction_loop(
-                eval_dataloader,
-                description="Evaluation on real dataset",
-                prediction_loss_only=False,
+            self.compute_metrics = self.compute_metrics_real
+            metrics_real = super().evaluate(
+                eval_dataset=self.eval_dataset_real,
                 metric_key_prefix="eval_data_real",
+                **kwargs,
             )
 
-            real_metrics = self.compute_metrics_real((output.predictions, output.label_ids))
-            real_metrics = {f"eval_data_real_{k}": v for k, v in real_metrics.items()}
-            metrics_all.update(real_metrics)
+        # restore
+        self.compute_metrics = original_compute_metrics
 
-            print(real_metrics)
-
-        self.compute_metrics = original_compute_metrics  # Restore
-
-        return metrics_all
+        # merge and return
+        merged = {**metrics_synth, **metrics_real}
+        return merged
 
 
 def extract_tokens(text):
@@ -135,15 +129,21 @@ def get_compute_metrics_fn(processor, max_tokens, eval_dummy_camera, action_enco
         metric = []
         whole_text = []
         for i in range(len(predictions)):
-            prefix_len = sum(labels[i] == -100) # first x tokens are -100, end is generated
-            # make sure we don't have any -100 token ids, because those cause failures
-            # in the decoder
-            predictions_cur = predictions[i, labels[i].shape[0]:]
-            predictions_cur[predictions_cur==-100] = processor.tokenizer.pad_token_id
-            decoded_preds = processor.decode(predictions_cur, skip_special_tokens=True)
-            labels_cur = labels[i, prefix_len:]
-            labels_cur[labels_cur==-100] = processor.tokenizer.pad_token_id
-            decoded_labels = processor.decode(labels_cur, skip_special_tokens=True)
+            tmp_labels, tmp_preds = labels[i], predictions[i]
+            valid_mask = tmp_labels != -100  # -100 tokens are not valid (either padding or ignored tokens)
+            first_valid_idx = np.argmax(valid_mask) # first index that is valid - determines the start of the generated text
+            
+            labels_to_decode = tmp_labels[valid_mask]
+            decoded_labels = processor.decode(labels_to_decode, skip_special_tokens=True)
+
+            if len(tmp_preds) - first_valid_idx >= max_tokens:
+                preds_to_decode = tmp_preds[first_valid_idx + max_tokens:] # take only the part of the prediction that is valid
+                preds_to_decode[preds_to_decode == -100] = processor.tokenizer.pad_token_id # if -100 is present, replace it with pad token id
+                decoded_preds = processor.decode(preds_to_decode, skip_special_tokens=True)
+            else:
+                preds_to_decode = []
+                decoded_preds = ""
+
             # start statistics
             num_tokens_in_pred = len(extract_tokens(decoded_preds))
             num_tokens_in_label = len(extract_tokens(decoded_labels))
@@ -270,7 +270,7 @@ def get_trainer(args, model, processor, train_dataset, eval_sim_dataset, eval_re
     )
 
 
-    if args.double_eval:
+    if args.eval_dataset == "double":
         trainer = MultiEvalSeq2SeqTrainer(
             model=model,
             train_dataset=train_dataset,
@@ -329,7 +329,10 @@ def get_datasets(args, dataset_location):
     else:
         augment_rgbds=randomize_background
         augment_rgb = augment_image_rgb
-        augment_text = complexify_text
+        if args.conditioning == "trajectory":
+            augment_text = None
+        else:
+            augment_text = complexify_text
         augment_depth = None
     
     if "mix30obj" in dataset_location:
@@ -403,6 +406,10 @@ def get_datasets(args, dataset_location):
         eval_sim_dummy_camera = eval_sim_dataset[0][1][0]["camera"]
         eval_sim_action_encoder = sim_raw_dataset_for_eval.action_encoder
 
+        # Initial test which tasks we have
+        print(eval_sim_dataset.task_lookup.keys())
+        print(eval_real_dataset.task_lookup.keys())
+
     else:
         raise ValueError(f"Unknown conditioning type: {args.conditioning}")
     
@@ -462,7 +469,7 @@ def get_args():
                         choices=["xyzrotvec-cam-512xy128d", "xyzrotvec-cam-1024xy", "xyzrotvec-cam-512xy", 
                                  "xyzrotvec-cam-256xy", "xyzrotvec-cam-128xy", "xyzrotvec-cam-512xy256d" ], help="Encoder to use for the model")
     parser.add_argument("--depth", action="store_true")
-    parser.add_argument("--max_tokens", type=int, default=12, help="Max tokens for generation (basically sequence length)")
+    parser.add_argument("--max_tokens", type=int, default=13, help="Max tokens for generation (basically sequence length)")
     parser.add_argument("--dataset_version", type=str, choices=["clevr_only", "mix30obj"], default="mix30obj", help="Dataset version to use")
     
     # augmentation options
@@ -475,8 +482,7 @@ def get_args():
     parser.add_argument("--save_limit", type=int, default=5)
     parser.add_argument("--save_path", type=str, default="/work/dlclarge2/bratulic-cvla/models")
     parser.add_argument("--no_eval", action="store_true", help="Do not evaluate the model")
-    parser.add_argument("--double_eval", action="store_true", help="Evaluate on both real and synthetic datasets")
-    parser.add_argument("--eval_dataset", type=str, choices=["real", "sim"], default="sim", help="Dataset to evaluate on")
+    parser.add_argument("--eval_dataset", type=str, choices=["real", "sim", "double"], default="sim", help="Dataset to evaluate on")
     parser.add_argument("--data_location", type=str, default="/work/dlclarge2/bratulic-cvla/")
     
     # demo-specific options
@@ -540,6 +546,7 @@ def main():
     # TRANSFER THE MODEL TO FINAL LOCATION
     os.system(f"mv {save_path}/* {save_path_final}/")
 
+    print("Done training")
 
 
 if __name__ == "__main__":
