@@ -2,6 +2,7 @@ import tqdm
 from pathlib import Path
 import numpy as np
 import pickle
+import itertools
 from torch.utils.data import Dataset
 
 import matplotlib.pyplot as plt
@@ -31,6 +32,7 @@ class PairedDataset(Dataset):
                  plot_statistics=False,
                  sort_criteria="camera_position",   # camera or trajectory coords
                  mode="train",
+                 sampling_type="random",
                  presampled_path=None):
         self.raw_dataset = raw_dataset
         self.num_images_in_context = num_images_in_context
@@ -164,6 +166,24 @@ class PairedDataset(Dataset):
                     with open(presampled_path, "wb") as f:
                         pickle.dump(self.presampled_pairs, f)
         
+
+        if mode == "train" and sampling_type == "all":  # TODO: WILL GENERATE ONLY FOR BASIC ONE WITHOUT SORTING OR ICOPY FOR NOW!
+            # we need to sample all possible combinations of the image pairs and store it
+            self.presampled_pairs = []
+
+            for task, available_indices in self.task_lookup.items():
+                task_img_indices = available_indices["images"]
+                # Generate all combinations of the image pairs (no icopy, no similarity, just random pairs, cover all possibilities)
+                
+                # all available combinations of 2 image pairs
+                all_pairs = itertools.combinations(task_img_indices, self.num_images_in_context + 1)
+                self.presampled_pairs.extend(all_pairs)
+
+            # randomly shuffle the pairs
+            np.random.shuffle(self.presampled_pairs)
+
+            self.paired_len = len(self.presampled_pairs)
+
         # Print and plot statistics about the dataset
         print("Statistics about the paired dataset:")
         print(f"Number of tasks with >1 image: {len(self.task_lookup)}")
@@ -215,8 +235,12 @@ class PairedDataset(Dataset):
             sequence_to_sample = self.presampled_pairs[idx]
             images = []
             entries = []
+            depths = []
             for i in sequence_to_sample:
                 image, entry = self.raw_dataset[i]
+                if isinstance(image, tuple) or isinstance(image, list):
+                    depths.append(image[0])
+                    image = image[1]
                 images.append(image)
                 entries.append(entry)
 
@@ -226,17 +250,29 @@ class PairedDataset(Dataset):
             task = np.random.choice(list(self.task_lookup.keys()))
             
             if np.random.rand() < self.p_copy:
+                depth = None
                 # Copy sampling: context and query are exactly the same image.
                 chosen_idx = np.random.choice(self.task_lookup[task]["images"], 1, replace=False)[0]
                 if self.just_indices:
                     return [chosen_idx] * (self.num_images_in_context + 1)
                 image, entry = self.raw_dataset.getitem_func(chosen_idx)   # self.raw_dataset[chosen_idx]
+                if isinstance(image, tuple) or isinstance(image, list):
+                    depth = image[0]
+                    image = image[1]
                 images = [image] * (self.num_images_in_context + 1)
                 entries = [entry] * (self.num_images_in_context + 1)
+                if depth is not None:
+                    depths = [depth] * (self.num_images_in_context + 1)
+                else:
+                    depths = []
                 # Optionally, apply augmentation on the copies
                 if self.apply_copy_augs:
-                    augmented_copy = self.raw_dataset.getitem_func(chosen_idx, force_augs=True)
-                    images[-1] = augmented_copy[0]
+                    augmented_copy, _ = self.raw_dataset.getitem_func(chosen_idx, force_augs=True)
+                    if isinstance(augmented_copy, tuple):
+                        augmented_depth = augmented_copy[1]
+                        augmented_copy = augmented_copy[0]
+                        depths[-1] = augmented_depth
+                    images[-1] = augmented_copy
                     
             elif np.random.rand() < self.p_sort_by_l2_distance:
                 # Sample one query image, then choose context images based on similarity (L2 distance)
@@ -251,16 +287,22 @@ class PairedDataset(Dataset):
                 if self.just_indices:
                     return [task_img_indices[i] for i in context_indices] + [task_img_indices[query_pos]]
 
-                images, entries = [], []
+                images, entries, depths = [], [], []
                 for i in context_indices:
                     img_idx = task_img_indices[i]
                     image, entry = self.raw_dataset[img_idx]
+                    if isinstance(image, tuple) or isinstance(image, list):
+                        depths.append(image[0])
+                        image = image[1]
                     images.append(image)
                     entries.append(entry)
                 
                 # Get the query image and append it at the end
                 query_img_idx = task_img_indices[query_pos]
                 query_image, query_entry = self.raw_dataset[query_img_idx]
+                if isinstance(query_image, tuple) or isinstance(query_image, list):
+                    depths.append(query_image[0])
+                    query_image = query_image[1]
                 images.append(query_image)
                 entries.append(query_entry)
             
@@ -271,11 +313,16 @@ class PairedDataset(Dataset):
                 chosen_indices = np.random.choice(task_img_indices, self.num_images_in_context + 1, replace=False)
                 if self.just_indices:
                     return chosen_indices.tolist()
-                images, entries = [], []
+                images, entries, depths = [], [], []
                 for idx in chosen_indices:
                     image, entry = self.raw_dataset[idx]
+                    if isinstance(image, tuple) or isinstance(image, list):
+                        depths.append(image[0])
+                        image = image[1]
                     images.append(image)
                     entries.append(entry)
         
         # Optionally, you can also return additional info (indices or similarity metrics) if needed.
-        return images, entries
+        if len(depths) == 0:
+            depths = [None] * (len(images))
+        return images, entries, depths

@@ -67,7 +67,9 @@ class cVLA_wrapped:
         if self.conditioning == "trajectory":
             action_enoder = args.get("action_encoder", "xyzrotvec-cam-1024xy")
             enc_model = getActionEncInstance(action_enoder)
-            return_depth = False
+            self.depth_on_query = args.get("depth", False)
+            self.depth_on_both = args.get("depth_on_both", False)
+            return_depth = self.depth_on_query or self.depth_on_both
         else:
             try:
                 with open(info_file, "r") as f:
@@ -115,17 +117,33 @@ class cVLA_wrapped:
 
         if self.conditioning == "trajectory":
              def collate_fn(batch):
-                images, labels = zip(*batch)        # images will be lists of lists since one batch input has multiple images
+                images, labels, depths = zip(*batch)        # images will be lists of lists since one batch input has multiple images
                 prefixes = []
                 for i in range(len(labels)):
                     tmp_prefix = ""
+                    if self.depth_on_both:
+                        tmp_prefix += "<image>"
                     tmp_prefix += "<image>" + get_robot_state(labels[i][0]["prefix"]) + " " + labels[i][0]["suffix"]
                     tmp_prefix += "<image>"
+                    if return_depth:
+                        tmp_prefix += "<image>"
                     tmp_prefix += get_robot_state(labels[i][-1]["prefix"]) + " "
                     
                     prefixes.append(tmp_prefix)
                 
-                images_flat = [image for images_list in images for image in images_list]
+                if return_depth:
+                    images_flat = []
+                    for image_tuples, depth_tuples in zip(images, depths):
+                        if self.depth_on_both:
+                            for image_tuple, depth_tuple in zip(image_tuples, depth_tuples):
+                                images_flat.append(depth_tuple)
+                                images_flat.append(image_tuple)
+                        else:
+                            images_flat.extend(image_tuples[:-1])
+                            images_flat.append(depth_tuples[-1])
+                            images_flat.append(image_tuples[-1])
+                else:
+                    images_flat = [image for images_list in images for image in images_list]
 
                 inputs = processor(
                     text=prefixes,

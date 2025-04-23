@@ -74,28 +74,52 @@ def get_robot_state(prefix):
 
 def get_collate_fn(processor, num_images_in_context, image_order, TORCH_DTYPE, args, DEVICE):
     def collate_fn(batch):
-        images, labels = zip(*batch)        # images will be lists of lists since one batch input has multiple images
+        
         if args.conditioning == "trajectory":
-            if args.depth:
-                raise NotImplementedError("Depth not implemented for trajectory conditioning")
+            images, labels, depths = zip(*batch)        # images will be lists of lists since one batch input has multiple images
+            #if args.depth:
+            #    raise NotImplementedError("Depth not implemented for trajectory conditioning")
             prefixes, suffixes = [], []
             for i in range(len(labels)):
                 tmp_prefix = ""
                 if image_order == "interleaved":
                     for j in range(num_images_in_context):
+                        if args.depth_on_both:
+                            tmp_prefix += "<image>"
                         tmp_prefix += "<image>" + get_robot_state(labels[i][j]["prefix"]) + " " + labels[i][j]["suffix"]
+                    if args.depth or args.depth_on_both:
+                        tmp_prefix += "<image>"
                     tmp_prefix += "<image>"
                     tmp_prefix += get_robot_state(labels[i][-1]["prefix"]) + " "
                 else:
-                    tmp_prefix = "<image>"*(num_images_in_context + 1)
+                    if args.depth_on_both:
+                        tmp_prefix = "<image><image>" * (num_images_in_context + 1)
+                    else:
+                        tmp_prefix = "<image>"*(num_images_in_context + 1)
+                        if args.depth:
+                            tmp_prefix += "<image>"
                     for j in range(num_images_in_context):
                         tmp_prefix += labels[i][j]["suffix"]
 
                 prefixes.append(tmp_prefix)
                 suffixes.append(labels[i][-1]["suffix"])
-            
-            images_flat = [image for images_list in images for image in images_list]
+            # if depth is added, we should have from first tuple all but last, then last depth and then last image in a tuple
+            # ASSUMES INTERLEAVED ORDER!
+            if args.depth or args.depth_on_both:
+                images_flat = []
+                for images_tuple, depth_tuple in zip(images, depths):
+                    if args.depth_on_both:
+                        for img, depth in zip(images_tuple, depth_tuple):
+                            images_flat.append(depth)
+                            images_flat.append(img)
+                    else:
+                        images_flat.extend(images_tuple[:-1])
+                        images_flat.append(depth_tuple[-1])
+                        images_flat.append(images_tuple[-1])
+            else:
+                images_flat = [image for images_list in images for image in images_list]
         else:
+            images, labels = zip(*batch)        # images will be lists of lists since one batch input has multiple images
             if not args.depth:    
                 prefixes = ["<image>" + label["prefix"] for label in labels]
                 suffixes = [label["suffix"] for label in labels]
@@ -309,7 +333,7 @@ def get_trainer(args, model, processor, train_dataset, eval_sim_dataset, eval_re
     return trainer
 
 
-def get_datasets(args, dataset_location):
+def get_datasets(args, dataset_location, valid_dataset_location):
     
     # SETTING UP THE DATASET
     action_encoder = args.action_encoder
@@ -318,7 +342,7 @@ def get_datasets(args, dataset_location):
     forced_image_augs = RandomizeBackgrounds(p=1.0, background_images=bg_image_dataset)
     
     return_depth = False
-    if args.depth:
+    if args.depth or args.depth_on_both:
         return_depth = True
 
     if args.no_augs:
@@ -335,10 +359,18 @@ def get_datasets(args, dataset_location):
             augment_text = complexify_text
         augment_depth = None
     
-    if args.dataset_version == "mix30obj":
+    if "mix30obj" in args.dataset_version:
         from torch.utils.data import ConcatDataset
-        dataset_location1 = "/tmp/cvla-clevr-8"
-        dataset_location2 = "/tmp/cvla-obja-8"
+        if args.dataset_version == "mix30obj-8":
+            dataset_location = "/tmp/cvla-clevr-8"
+            dataset_location1 = "/tmp/cvla-clevr-8"
+            dataset_location2 = "/tmp/cvla-obja-8"
+        elif args.dataset_version == "mix30obj-9":
+            dataset_location = "/tmp/cvla-clevr-9"
+            dataset_location1 = "/tmp/cvla-clevr-9"
+            dataset_location2 = "/tmp/cvla-obja-9"
+        else:
+            raise ValueError(f"Unknown dataset version: {args.dataset_version}")
         dataset1 = H5Dataset(dataset_location1, return_depth=return_depth, action_encoder=action_encoder, limit_samples=100_000,
                              augment_rgbds=augment_rgbds, augment_rgb=augment_rgb, augment_text=augment_text, augment_depth=augment_depth)
         dataset2 = H5Dataset(dataset_location2, return_depth=return_depth, action_encoder=action_encoder, limit_samples=50_000,
@@ -346,7 +378,6 @@ def get_datasets(args, dataset_location):
         raw_dataset = ConcatDataset([dataset1, dataset2])
         assert dataset1.action_encoder.NAME == dataset2.action_encoder.NAME, f"Action encoders are different: {dataset1.action_encoder.NAME} vs {dataset2.action_encoder.NAME}"
         raw_dataset.action_encoder = dataset1.action_encoder
-        dataset_location = "/tmp/cvla-clevr-8"  # so that eval dataset can be loaded
     else:
         raw_dataset = H5Dataset(dataset_location, return_depth=return_depth, action_encoder=action_encoder,
                                 augment_rgbds=augment_rgbds, augment_rgb=augment_rgb, augment_text=augment_text, augment_depth=augment_depth)
@@ -355,7 +386,7 @@ def get_datasets(args, dataset_location):
         run_name = f"_text_lr{args.lr}" + args.extra_run_name
         train_dataset = raw_dataset
         
-        eval_sim_dataset = H5Dataset(dataset_location, action_encoder=action_encoder, return_depth=return_depth, limit_samples=200,
+        eval_sim_dataset = H5Dataset(valid_dataset_location, action_encoder=action_encoder, return_depth=return_depth, limit_samples=200,
                                      augment_rgbds=None, augment_rgb=None, augment_text=None, augment_depth=None)
         eval_sim_dummy_camera = eval_sim_dataset[0][1]["camera"]
         eval_sim_action_encoder = None
@@ -373,21 +404,21 @@ def get_datasets(args, dataset_location):
         num_images_in_context = args.num_images_in_context
         image_order = args.image_order
 
-        run_name = f"_img_{num_images_in_context}_pr_{image_order}_enc_{action_encoder}"
+        run_name = f"{dataset_location.name}_img_{num_images_in_context}_pr_{image_order}_enc_{action_encoder}"
         eval_run_name = run_name
-        load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"cvla-clevr-8_{run_name}_new.pkl"
+        load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{args.dataset_version}_{run_name}_new.pkl"
         run_name += f"maxTokens{args.max_tokens}_lr{args.lr}" + args.extra_run_name  
 
         train_dataset = PairedDataset(raw_dataset, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=load_presampled_pairs_path,
                                     mode="train", p_copy=args.p_copy, apply_copy_augs=args.apply_copy_augs, p_sort_by_l2_distance=args.p_sort_by_l2_distance, 
-                                    sort_criteria=args.sort_criteria, presampled_path=None)
+                                    sort_criteria=args.sort_criteria, presampled_path=None, sampling_type=args.sampling_type)
         
         eval_dataset_location  = Path("/data/lmbraid19/argusm/datasets/cvla-droid-block-simple-v4")
         eval_real_load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{eval_dataset_location.name}_dataset_{eval_run_name}_new.pkl"
         presampled_eval_sequences_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{eval_dataset_location.name}_{eval_run_name}_pCopy0_pSorting0_presampled_eval_sequences.pkl"
         
         train_ratio = 0.0 if "droid-block" in str(eval_dataset_location) else 0.8
-        real_raw_eval_dataset = JSONLDataset(jsonl_file_path=eval_dataset_location, clean_prompt=True, return_depth=False, split="valid", train_ratio=train_ratio, action_encoder=action_encoder)
+        real_raw_eval_dataset = JSONLDataset(jsonl_file_path=eval_dataset_location, clean_prompt=True, return_depth=return_depth, split="valid", train_ratio=train_ratio, action_encoder=action_encoder)
         
         
         eval_real_dataset = PairedDataset(real_raw_eval_dataset, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=eval_real_load_presampled_pairs_path,
@@ -396,10 +427,10 @@ def get_datasets(args, dataset_location):
         eval_real_dummy_camera = eval_real_dataset[0][1][0]["camera"]
         eval_real_action_encoder = real_raw_eval_dataset.action_encoder
 
-        sim_raw_dataset_for_eval = H5Dataset(dataset_location, augment_rgbds=None, augment_rgb=None, augment_text=None, augment_depth=None, 
-                                     return_depth=False, action_encoder=action_encoder)
-        sim_load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"cvla-clevr-8_{eval_run_name}_new.pkl"
-        sim_presampled_eval_sequences_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"cvla-clevr-8_{eval_run_name}_pCopy0_pSorting0_presampled_eval_sequences.pkl"
+        sim_raw_dataset_for_eval = H5Dataset(valid_dataset_location, augment_rgbds=None, augment_rgb=None, augment_text=None, augment_depth=None, 
+                                     return_depth=return_depth, action_encoder=action_encoder)
+        sim_load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{valid_dataset_location.name}_{eval_run_name}_new.pkl"
+        sim_presampled_eval_sequences_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{valid_dataset_location.name}_{eval_run_name}_pCopy0_pSorting0_presampled_eval_sequences.pkl"
 
         eval_sim_dataset = PairedDataset(sim_raw_dataset_for_eval, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=sim_load_presampled_pairs_path,
                                     mode="test", p_copy=0, apply_copy_augs=False, p_sort_by_l2_distance=0, 
@@ -409,8 +440,8 @@ def get_datasets(args, dataset_location):
         eval_sim_action_encoder = sim_raw_dataset_for_eval.action_encoder
 
         # Initial test which tasks we have
-        print(eval_sim_dataset.task_lookup.keys())
-        print(eval_real_dataset.task_lookup.keys())
+        # print(eval_sim_dataset.task_lookup.keys())
+        # print(eval_real_dataset.task_lookup.keys())
 
     else:
         raise ValueError(f"Unknown conditioning type: {args.conditioning}")
@@ -423,7 +454,7 @@ def get_datasets(args, dataset_location):
     return train_dataset, eval_sim_dataset, eval_real_dataset, run_name, eval_sim_dummy_camera,  eval_real_dummy_camera, raw_dataset.action_encoder, eval_sim_action_encoder, eval_real_action_encoder
 
 
-def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
+def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/", dataset_version="cvla-clevr-8"):
     # DATA COPY-PASTING AND CHECK
     if not os.path.exists('/tmp/indoorCVPR'):
         cmd1 = (
@@ -433,30 +464,49 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/"):
         )
         subprocess.run(cmd1, shell=True, check=True)
 
-        cmd3 = "file /tmp/indoorCVPR"
-        result1 = subprocess.run(cmd3, shell=True, check=True, capture_output=True, text=True)
+        cmd2 = "file /tmp/indoorCVPR"
+        result1 = subprocess.run(cmd2, shell=True, check=True, capture_output=True, text=True)
         print(result1.stdout)
     else:
         print('Data already copied.')
 
-    if not os.path.exists('/tmp/cvla-clevr-8'):
-        cmd2 = f"rsync -a --progress {data_location}/cvla-clevr-8/ /tmp/cvla-clevr-8/"
-        subprocess.run(cmd2, shell=True, check=True)
+    if "cvla-clevr" in dataset_version:
+        clevr_dataset = dataset_version
+        cvla_dataset = None
+    elif "mix30obj-8" in dataset_version:
+        cvla_dataset = "cvla-obja-8"
+        clevr_dataset = "cvla-clevr-8"
+    elif "mix30obj-camF-sceneF-9" in dataset_version:
+        clevr_dataset = "cvla-clevr-camF-sceneF-9"
+        cvla_dataset = "cvla-obja-camF-sceneF-9"
+    elif "mix30obj-camRF-sceneF-9" in dataset_version:
+        clevr_dataset = "cvla-clevr-camRF-sceneF-9"
+        cvla_dataset = "cvla-obja-camRF-sceneF-9"
+    elif "mix30obj-camRF-sceneR-9" in dataset_version:
+        clevr_dataset = "cvla-clevr-camRF-sceneR-9"
+        cvla_dataset = "cvla-obja-camRF-sceneR-9"
+    elif "mix30obj-camRS-sceneF-9" in dataset_version:
+        clevr_dataset = "cvla-clevr-camRS-sceneF-9"
+        cvla_dataset = "cvla-obja-camRS-sceneF-9"
+    else:
+        raise ValueError(f"Unknown dataset version: {dataset_version}")
+    
+    if cvla_dataset is not None:
+        if not os.path.exists(f'/tmp/{cvla_dataset}'):
+            cmd3 = f"rsync -a --progress {data_location}/{cvla_dataset}/ /tmp/{cvla_dataset}/"
+            subprocess.run(cmd3, shell=True, check=True)
 
-        cmd4 = "file /tmp/cvla-clevr-8"
+            cmd4 = f"file /tmp/{cvla_dataset}"
+            result2 = subprocess.run(cmd4, shell=True, check=True, capture_output=True, text=True)
+            print(result2.stdout)
+
+    if not os.path.exists(f'/tmp/{clevr_dataset}'):
+        cmd3 = f"rsync -a --progress {data_location}/{clevr_dataset}/ /tmp/{clevr_dataset}/"
+        subprocess.run(cmd3, shell=True, check=True)
+
+        cmd4 = f"file /tmp/{clevr_dataset}"
         result2 = subprocess.run(cmd4, shell=True, check=True, capture_output=True, text=True)
         print(result2.stdout)
-    else:
-        print('Data already copied.')
-
-
-    if not os.path.exists('/tmp/cvla-obja-8'):
-        cmd5 = f"rsync -a --progress {data_location}/cvla-obja-8/ /tmp/cvla-obja-8/"
-        subprocess.run(cmd5, shell=True, check=True)
-
-        cmd6 = "file /tmp/cvla-obja-8"
-        result3 = subprocess.run(cmd6, shell=True, check=True, capture_output=True, text=True)
-        print(result3.stdout)
     else:
         print('Data already copied.')
 
@@ -469,8 +519,14 @@ def get_args():
     parser.add_argument("--conditioning", type=str, choices=["text", "trajectory"], default="text")
     parser.add_argument("--action_encoder", type=str, default="xyzrotvec-cam-512xy128d", help="Encoder to use for the model")
     parser.add_argument("--depth", action="store_true")
+    parser.add_argument("--depth_on_both", action="store_true", help="Use depth on both images in context and query image")
     parser.add_argument("--max_tokens", type=int, default=13, help="Max tokens for generation (basically sequence length)")
-    parser.add_argument("--dataset_version", type=str, choices=["clevr_only", "mix30obj"], default="mix30obj", help="Dataset version to use")
+    parser.add_argument("--dataset_version", type=str, choices=["cvla-clevr-8", 
+                                                                "cvla-clevr-camF-sceneF-9", "cvla-clevr-camRF-sceneF-9",  
+                                                                "cvla-clevr-camRF-sceneR-9", "cvla-clevr-camRS-sceneF-9",
+                                                                "mix30obj-8", 
+                                                                "mix30obj-camF-sceneF-9", "mix30obj-camRF-sceneF-9",
+                                                                "mix30obj-camRF-sceneR-9", "mix30obj-camRS-sceneF-9"], default="mix30obj-8", help="Dataset version to use")
     
     # augmentation options
     parser.add_argument("--p_background", type=float, default=0.2)
@@ -478,16 +534,17 @@ def get_args():
     
     # save and eval options
     parser.add_argument("--extra_run_name", type=str, default="debug")
-    parser.add_argument("--save_steps", type=int, default=350)
-    parser.add_argument("--save_limit", type=int, default=5)
+    parser.add_argument("--save_steps", type=int, default=1000)
+    parser.add_argument("--save_limit", type=int, default=15)
     parser.add_argument("--save_path", type=str, default="/work/dlclarge2/bratulic-cvla/models")
     parser.add_argument("--no_eval", action="store_true", help="Do not evaluate the model")
-    parser.add_argument("--eval_dataset", type=str, choices=["real", "sim", "double"], default="sim", help="Dataset to evaluate on")
+    parser.add_argument("--eval_dataset", type=str, choices=["real", "sim", "double"], default="double", help="Dataset to evaluate on")
     parser.add_argument("--data_location", type=str, default="/work/dlclarge2/bratulic-cvla/")
     
     # demo-specific options
     parser.add_argument("--num_images_in_context", type=int, default=1)
     parser.add_argument("--image_order", type=str, choices=["interleaved", "images_first"], default="interleaved")
+    parser.add_argument("--sampling_type", type=str, choices=["random", "all"], default="all", help="Sampling type for the images in context. Random will sample randomly, all will try to not reuse the same image combination twice")
     parser.add_argument("--p_copy", type=float, default=0.0, help="Percentage of pairs with direct copy of images in context")
     parser.add_argument("--apply_copy_augs", action="store_true", help="Apply augmentations to the copy of the images in context")
     parser.add_argument("--p_sort_by_l2_distance", type=float, default=0.0, help="Sort the images in context by L2 distance to the query image for some percentage")
@@ -495,7 +552,7 @@ def get_args():
     
     # optimization options
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--batch_size_dev", type=int, default=4)
+    parser.add_argument("--batch_size_dev", type=int, default=3)
     parser.add_argument("--max_steps", type=int, default=-1, help="Max steps for training, -1 for using one epoch of defined data")
     parser.add_argument("--num_repeats", type=int, default=1)
     parser.add_argument("--checkpoint", type=str, default=None)
@@ -507,16 +564,32 @@ def get_args():
 
     return parser.parse_args()
 
+
 def main():
     current_time =  datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     args = get_args()
 
-    dataset_location = args.data_location
-    load_data_to_node(dataset_location)
+    if "mix30obj" in args.dataset_version:
+        dataset_location = "_" + args.dataset_version
+        if args.dataset_version == "mix30obj-8":
+            valid_dataset_location = Path("/tmp") / "cvla-obja-8"
+        elif "mix30obj-camF-sceneF-9" in args.dataset_version:
+            valid_dataset_location = Path("/tmp") / "cvla-clevr-camF-sceneF-9"
+        elif "mix30obj-camRF-sceneF-9" in args.dataset_version:
+            valid_dataset_location = Path("/tmp") / "cvla-clevr-camRF-sceneF-9"
+        elif "mix30obj-camRF-sceneR-9" in args.dataset_version:
+            valid_dataset_location = Path("/tmp") / "cvla-clevr-camRF-sceneR-9"
+        elif "mix30obj-camRS-sceneF-9" in args.dataset_version:
+            valid_dataset_location = Path("/tmp") / "cvla-clevr-camRS-sceneF-9"
+
+    else:
+        dataset_location = Path("/tmp") / args.dataset_version
+        valid_dataset_location = Path("/tmp") / args.dataset_version    # + "-valid" 
+
+    load_data_to_node(args.data_location, args.dataset_version)
 
     # SETTING UP THE DATASETS
-    #TODO(max): action encoder is aved in the dataset, and cameras should be per dataset sample.
-    train_dataset, eval_sim_dataset, eval_real_dataset, run_name, eval_sim_dummy_camera, eval_real_dummy_camera, action_encoder, eval_sim_action_encoder, eval_real_action_encoder = get_datasets(args, dataset_location)
+    train_dataset, eval_sim_dataset, eval_real_dataset, run_name, eval_sim_dummy_camera, eval_real_dummy_camera, action_encoder, eval_sim_action_encoder, eval_real_action_encoder = get_datasets(args, dataset_location, valid_dataset_location)
     
     # SETTING UP THE SAVE PATHS
     save_path_final = Path(args.save_path) / (run_name + "_" + current_time)
@@ -531,13 +604,12 @@ def main():
     # SETTING UP THE TRAINER
     trainer = get_trainer(args, model, processor, train_dataset, eval_sim_dataset, eval_real_dataset, collate_fn, save_path, eval_sim_dummy_camera, eval_real_dummy_camera, action_encoder, eval_sim_action_encoder, eval_real_action_encoder)
     
-    #trainer.evaluate()
     # TRAINING THE MODEL
     import traceback
     try:
-        trainer.train()
+        trainer.train(resume_from_checkpoint=args.checkpoint)
     except Exception as e:  # Catch all exceptions, including AssertionError
-        print(f"Encountered error {e.__class__.__name__} at seed {args.seed[0]} while resetting env. Skipping this iteration.")
+        print(f"Encountered error {e.__class__.__name__}")
         print(e)
         traceback.print_exc()  # Prints the full traceback
     

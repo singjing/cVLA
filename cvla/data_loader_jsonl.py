@@ -126,7 +126,7 @@ class JSONLDataset(Dataset):
 
         if self.return_depth:
             import numpy as np
-            depth_path = os.path.join(self.image_directory_path, entry['image'].replace("_first.jpg", "_depth0.png"))
+            depth_path = os.path.join(self.image_directory_path, str(entry['image']).replace("_first.jpg", "_depth0.png"))
             depth_png = Image.open(depth_path)
             depth_png = np.array(depth_png)
             depth_png[depth_png==3000] = 0
