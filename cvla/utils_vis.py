@@ -29,7 +29,7 @@ def transform_3d(point_3d: np.ndarray, mat: np.ndarray):
     res = res / res[3] # remove homogeneous coordinate
     return res[:3]
 
-def draw_coordinate_frame(label, camera, enc, ax, axis_length=0.1):
+def draw_coordinate_frame(label, camera, enc, ax, axis_length=0.05):
     """
     Draws a coordinate frame on a Matplotlib axis for each point in a trajectory.
 

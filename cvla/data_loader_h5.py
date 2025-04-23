@@ -85,6 +85,8 @@ class H5Dataset(Dataset):
         obj_end = Pose(torch.tensor(self.h5_file[f"traj_{idx}/obs/extra/obj_end"][frame_idx]))
         grasp_pose = Pose(torch.tensor(self.h5_file[f"traj_{idx}/obs/extra/grasp_pose"][frame_idx]))
         tcp_pose = Pose(torch.tensor(self.h5_file[f"traj_{idx}/obs/extra/tcp_pose"][frame_idx]))
+        robot_pose = Pose(torch.tensor(self.h5_file[f"traj_{idx}/obs/extra/robot_pose"][frame_idx]))
+
         camera_intrinsic = self.h5_file[f"traj_{idx}/obs/sensor_param/render_camera/intrinsic_cv"][frame_idx]
         camera_extrinsic = self.h5_file[f"traj_{idx}/obs/sensor_param/render_camera/extrinsic_cv"][frame_idx]
         
@@ -98,7 +100,7 @@ class H5Dataset(Dataset):
         enc_traj = self.action_encoder.encode_trajectory
         prefix, token_str, curve_3d, orns_3d, info = to_prefix_suffix(obj_start, obj_end,
                                                                        camera, grasp_pose, tcp_pose,
-                                                                       action_text, enc_traj, robot_pose=None)
+                                                                       action_text, enc_traj, robot_pose=robot_pose)
         entry = dict(prefix=prefix, suffix=token_str, camera=camera)
 
         if self.return_only_prefix:     # used only for paired dataset for setup

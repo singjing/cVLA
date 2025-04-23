@@ -335,7 +335,7 @@ def get_datasets(args, dataset_location):
             augment_text = complexify_text
         augment_depth = None
     
-    if "mix30obj" in dataset_location:
+    if args.dataset_version == "mix30obj":
         from torch.utils.data import ConcatDataset
         dataset_location1 = "/tmp/cvla-clevr-8"
         dataset_location2 = "/tmp/cvla-obja-8"
@@ -361,8 +361,10 @@ def get_datasets(args, dataset_location):
         eval_sim_action_encoder = None
         eval_dataset_location  = Path("/data/lmbraid19/argusm/datasets/cvla-droid-block-simple-v4")
         train_ratio = 0.0 if "droid-block" in str(eval_dataset_location) else 0.8
+        from cvla.data_augmentations import CleanText
+        clean_text = CleanText(truncate_len=75)
         eval_real_dataset = JSONLDataset(jsonl_file_path=eval_dataset_location, action_encoder=action_encoder,
-                                         clean_prompt=True, return_depth=False, split="valid", train_ratio=train_ratio)
+                                         augment_text=clean_text, return_depth=False, split="valid", train_ratio=train_ratio)
 
         eval_real_dummy_camera = eval_real_dataset[0][1]["camera"]
         eval_real_action_encoder = eval_real_dataset.action_encoder
@@ -465,9 +467,7 @@ def get_args():
     # model and task specific options
     parser.add_argument("--model_id", type=str, default="google/paligemma2-3b-pt-224")
     parser.add_argument("--conditioning", type=str, choices=["text", "trajectory"], default="text")
-    parser.add_argument("--action_encoder", type=str, default="xyzrotvec-cam-512xy128d", 
-                        choices=["xyzrotvec-cam-512xy128d", "xyzrotvec-cam-1024xy", "xyzrotvec-cam-512xy", 
-                                 "xyzrotvec-cam-256xy", "xyzrotvec-cam-128xy", "xyzrotvec-cam-512xy256d" ], help="Encoder to use for the model")
+    parser.add_argument("--action_encoder", type=str, default="xyzrotvec-cam-512xy128d", help="Encoder to use for the model")
     parser.add_argument("--depth", action="store_true")
     parser.add_argument("--max_tokens", type=int, default=13, help="Max tokens for generation (basically sequence length)")
     parser.add_argument("--dataset_version", type=str, choices=["clevr_only", "mix30obj"], default="mix30obj", help="Dataset version to use")
@@ -511,21 +511,16 @@ def main():
     current_time =  datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     args = get_args()
 
-    if args.dataset_version == "mix30obj":
-        dataset_location = "_mix30obj"
-    elif args.dataset_version == "clevr_only":
-        dataset_location = "/tmp/cvla-clevr-8"
-    else:
-        raise ValueError(f"Unknown dataset version: {args.dataset_version}")
-
-    load_data_to_node(args.data_location)
+    dataset_location = args.data_location
+    load_data_to_node(dataset_location)
 
     # SETTING UP THE DATASETS
+    #TODO(max): action encoder is aved in the dataset, and cameras should be per dataset sample.
     train_dataset, eval_sim_dataset, eval_real_dataset, run_name, eval_sim_dummy_camera, eval_real_dummy_camera, action_encoder, eval_sim_action_encoder, eval_real_action_encoder = get_datasets(args, dataset_location)
     
     # SETTING UP THE SAVE PATHS
-    save_path_final = Path(args.save_path) / (str(Path(dataset_location).stem) + run_name + "_" + current_time)
-    save_path = Path(f"/tmp/cvla_{getpass.getuser()}") / (str(Path(dataset_location).stem) + run_name + "_" + current_time)
+    save_path_final = Path(args.save_path) / (run_name + "_" + current_time)
+    save_path = Path(f"/tmp/cvla_{getpass.getuser()}") / (run_name + "_" + current_time)
     save_hyperparams(save_path_final, save_path, args)
 
     # SETTING UP THE MODEL
@@ -538,10 +533,13 @@ def main():
     
     #trainer.evaluate()
     # TRAINING THE MODEL
+    import traceback
     try:
         trainer.train()
-    except:
-        print("Training interrupted")
+    except Exception as e:  # Catch all exceptions, including AssertionError
+        print(f"Encountered error {e.__class__.__name__} at seed {args.seed[0]} while resetting env. Skipping this iteration.")
+        print(e)
+        traceback.print_exc()  # Prints the full traceback
     
     # TRANSFER THE MODEL TO FINAL LOCATION
     os.system(f"mv {save_path}/* {save_path_final}/")

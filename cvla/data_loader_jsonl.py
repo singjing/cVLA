@@ -14,13 +14,11 @@ from cvla.utils_trajectory import DummyCamera
 from cvla.utils_traj_tokens import getActionEncInstance, to_prefix_suffix
 from cvla.data_augmentations import depth_to_color as depth_to_color_func
 
-def clean_prompt(prompt_text):
-    return prompt_text.lower().replace("\n","").replace(".","").replace("  "," ")
+
 
 class JSONLDataset(Dataset):
-    # TODO(max): clean_prompt should be a augment_text function
     def __init__(self, jsonl_file_path: str, image_directory_path=None, return_depth=False,
-                 augment_rgb=None, clean_prompt=True, augment_text=None, augment_depth=None, depth_to_color=True,
+                 augment_rgb=None, augment_text=None, augment_depth=None, depth_to_color=True,
                  augment_crop=None, limit_samples=None, action_encoder="xyzrotvec-cam-1024xy",
                  train_ratio: float = 0.8, seed: int = 42, split="train"):
         jsonl_file_path = Path(jsonl_file_path)
@@ -54,7 +52,7 @@ class JSONLDataset(Dataset):
         indices_split = sorted(indexes_all[:split_index]) if split == "train" else sorted(indexes_all[split_index:])
         if limit_samples is not None:
             assert limit_samples <= len(indices_split), f"limit_samples was {limit_samples}, must be less than {len(indices_split)}"
-            indices_split = indices_split[np.linspace(0, len(self.entries) - 1, limit_samples, dtype=int)]
+            indices_split = np.array(indices_split)[np.linspace(0, len(indices_split) - 1, limit_samples, dtype=int)]
         
         self.action_encoder = getActionEncInstance(action_encoder)
         self.all_entries = self.entries
@@ -65,10 +63,9 @@ class JSONLDataset(Dataset):
             new_entry["line_idx"] = i
             entries_new.append(new_entry)
         self.entries = entries_new
-            
-        self.clean_promt = clean_prompt
-        self.augment_rgb = augment_rgb
+
         self.augment_text = augment_text
+        self.augment_rgb = augment_rgb
         self.augment_depth = augment_depth
         self.return_depth = return_depth
         self.depth_to_color = depth_to_color
@@ -101,13 +98,11 @@ class JSONLDataset(Dataset):
         obj_end_pose = Pose(raw_pose=torch.tensor(label["obj_end_pose"]))
         grasp_pose = Pose(raw_pose=torch.tensor(label["grasp_pose"])) * self.dataset_orn_offset
         tcp_pose = Pose(raw_pose=torch.tensor(label["tcp_start_pose"])) * self.dataset_orn_offset
+        robot_pose = Pose(raw_pose=torch.tensor(label["robot_pose"])) * self.dataset_orn_offset
         action_text = label["action_text"]
         enc_traj = self.action_encoder.encode_trajectory
-        prefix, suffix, _, _, info = to_prefix_suffix(obj_start_pose, obj_end_pose, camera, grasp_pose, tcp_pose, action_text, enc_traj, robot_pose=None)
+        prefix, suffix, _, _, info = to_prefix_suffix(obj_start_pose, obj_end_pose, camera, grasp_pose, tcp_pose, action_text, enc_traj, robot_pose=robot_pose)
         return dict(image=img_path, prefix=prefix, suffix=suffix, camera=camera, enc_info=info)
-
-
-
 
 
     def getitem_func(self, idx: int, force_augs=False):
@@ -119,11 +114,9 @@ class JSONLDataset(Dataset):
         if self.return_only_prefix: # used only for paired dataset for setup, no augmentation
             return entry
         
-        if self.clean_promt:
-            entry["prefix"] = clean_prompt(entry["prefix"])
-
         if self.augment_text:
-            entry["prefix"] = self.augment_text(entry["prefix"])
+            assert entry["prefix"] == " ".join((entry["enc_info"]["action_text"], entry["enc_info"]["robot_state"]))
+            entry["prefix"] = " ".join((self.augment_text(entry["enc_info"]["action_text"]), entry["enc_info"]["robot_state"]))
                 
         image_path = os.path.join(self.image_directory_path, entry['image'])
         image = Image.open(image_path)
@@ -163,6 +156,7 @@ class JSONLDataset(Dataset):
             image, entry["suffix"] = self.augment_crop(image, entry["suffix"], self.action_encoder)  # adjust suffix
             
         return image, entry
+
 
 class ValidDataset:
     """

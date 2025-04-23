@@ -193,6 +193,13 @@ class DepthAugmentation:
 
 # Text Augmentations --------------------------------------------------------
 
+class CleanText:
+    def __init__(self, truncate_len: int=75):
+        self.truncate_len = truncate_len
+
+    def __call__(self, prompt_text):
+        return prompt_text.lower().replace("\n"," ").replace(".","").replace("  "," ")[:self.truncate_len]
+
 # Dictionary where values will be replaced with their corresponding keys
 clevr_move_replacement_dict = {
     "pick up the": "move",
@@ -222,21 +229,10 @@ real_block_sent = {'put the {} in the {}': 92, 'put the {} inside the {}': 30, '
 
 real_block_word = {'cube': {'block': 118, 'cube': 21, 'box': 2},'sphere': {'sphere': 50, 'ball': 50}}
 
-# def complexify_text(text):
-#     _, size_1, color_1, shape_1, _, size_2, color_2, shape_2 = text.strip().split(" ")
-#     sampled_key = random.choices(list(real_block_sent.keys()), weights=list(real_block_sent.values()))[0]
-#     if shape_1 in real_block_word:
-#         shape_1 = random.choices(list(real_block_word[shape_1].keys()), weights=list(real_block_word[shape_1].values()))[0]
-#     if shape_2 in real_block_word:
-#         shape_2 = random.choices(list(real_block_word[shape_2].keys()), weights=list(real_block_word[shape_2].values()))[0]
-#     object_name = " ".join((size_1, color_1, shape_1))
-#     container_name = " ".join((size_2, color_2, shape_2))
-#     new_text = sampled_key.format(object_name, container_name)
-#     return new_text
+#verbs = ["move", "place", "transfer", "set", "position", "lift", "relocate", "shift", "put", "bring"]
+#prepositions = ["onto", "on top of", "above", "over", "to rest on", "on", "onto the surface of"]
 
 
-#MOVE_REGEX = re.compile(r"^move\s+([\w-]+(?:\s+[\w-]+)*)\s+onto\s+([\w-]+(?:\s+[\w-]+)*)$")
-#MOVE_REGEX = re.compile(r"^move\s+([\w'-]+(?:\s+[\w'-]+)*)\s+onto\s+([\w'-]+(?:\s+[\w'-]+)*)$")
 MOVE_REGEX = re.compile(r"^move\s+([\w',.-]+(?:\s+[\w',.-]+)*)\s+onto\s+([\w',.-]+(?:\s+[\w',.-]+)*)$")
 
 def complexify_text(text):
