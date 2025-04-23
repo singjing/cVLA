@@ -18,6 +18,7 @@ from cvla.data_loader_h5 import H5Dataset
 from cvla.data_loader_jsonl import JSONLDataset
 from cvla.data_loader_images import ImageFolderDataset
 from cvla.data_loader_paired import PairedDataset
+from cvla.data_augmentations import CleanText
 from cvla.data_augmentations import augment_image_rgb, RandomizeBackgrounds, complexify_text
 
 
@@ -382,6 +383,7 @@ def get_datasets(args, dataset_location, valid_dataset_location):
         raw_dataset = H5Dataset(dataset_location, return_depth=return_depth, action_encoder=action_encoder,
                                 augment_rgbds=augment_rgbds, augment_rgb=augment_rgb, augment_text=augment_text, augment_depth=augment_depth)
     
+    clean_text = CleanText(truncate_len=75)
     if args.conditioning == "text":
         run_name = f"_text_lr{args.lr}" + args.extra_run_name
         train_dataset = raw_dataset
@@ -392,8 +394,6 @@ def get_datasets(args, dataset_location, valid_dataset_location):
         eval_sim_action_encoder = None
         eval_dataset_location  = Path("/data/lmbraid19/argusm/datasets/cvla-droid-block-simple-v4")
         train_ratio = 0.0 if "droid-block" in str(eval_dataset_location) else 0.8
-        from cvla.data_augmentations import CleanText
-        clean_text = CleanText(truncate_len=75)
         eval_real_dataset = JSONLDataset(jsonl_file_path=eval_dataset_location, action_encoder=action_encoder,
                                          augment_text=clean_text, return_depth=False, split="valid", train_ratio=train_ratio)
 
@@ -404,9 +404,10 @@ def get_datasets(args, dataset_location, valid_dataset_location):
         num_images_in_context = args.num_images_in_context
         image_order = args.image_order
 
-        run_name = f"{dataset_location.name}_img_{num_images_in_context}_pr_{image_order}_enc_{action_encoder}"
+        run_name = f"_img_{num_images_in_context}_pr_{image_order}_enc_{action_encoder}"
         eval_run_name = run_name
-        load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{args.dataset_version}_{run_name}_new.pkl"
+        run_name = f"{dataset_location.name}_{run_name}"
+        load_presampled_pairs_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{run_name}_new.pkl"
         run_name += f"maxTokens{args.max_tokens}_lr{args.lr}" + args.extra_run_name  
 
         train_dataset = PairedDataset(raw_dataset, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=load_presampled_pairs_path,
@@ -418,7 +419,7 @@ def get_datasets(args, dataset_location, valid_dataset_location):
         presampled_eval_sequences_path = Path("/data/lmbraid21/bratulic/max_pali/datasets") / f"{eval_dataset_location.name}_{eval_run_name}_pCopy0_pSorting0_presampled_eval_sequences.pkl"
         
         train_ratio = 0.0 if "droid-block" in str(eval_dataset_location) else 0.8
-        real_raw_eval_dataset = JSONLDataset(jsonl_file_path=eval_dataset_location, clean_prompt=True, return_depth=return_depth, split="valid", train_ratio=train_ratio, action_encoder=action_encoder)
+        real_raw_eval_dataset = JSONLDataset(jsonl_file_path=eval_dataset_location, augment_text=clean_text, return_depth=return_depth, split="valid", train_ratio=train_ratio, action_encoder=action_encoder)
         
         
         eval_real_dataset = PairedDataset(real_raw_eval_dataset, num_images_in_context=num_images_in_context, image_order=image_order, load_presampled_pairs_path=eval_real_load_presampled_pairs_path,
