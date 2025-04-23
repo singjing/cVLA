@@ -511,6 +511,17 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/", dataset_ve
     else:
         print('Data already copied.')
 
+    valid_dataset = clevr_dataset + "-valid"
+     if not os.path.exists(f'/tmp/{valid_dataset}'):
+        cmd3 = f"rsync -a --progress {data_location}/{valid_dataset}/ /tmp/{valid_dataset}/"
+        subprocess.run(cmd3, shell=True, check=True)
+
+        cmd4 = f"file /tmp/{valid_dataset}"
+        result2 = subprocess.run(cmd4, shell=True, check=True, capture_output=True, text=True)
+        print(result2.stdout)
+    else:
+        print('Data already copied.')
+
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -573,19 +584,19 @@ def main():
     if "mix30obj" in args.dataset_version:
         dataset_location = "_" + args.dataset_version
         if args.dataset_version == "mix30obj-8":
-            valid_dataset_location = Path("/tmp") / "cvla-obja-8"
+            valid_dataset_location = Path("/tmp") / "cvla-obja-8-valid"
         elif "mix30obj-camF-sceneF-9" in args.dataset_version:
-            valid_dataset_location = Path("/tmp") / "cvla-clevr-camF-sceneF-9"
+            valid_dataset_location = Path("/tmp") / "cvla-clevr-camF-sceneF-9-valid"
         elif "mix30obj-camRF-sceneF-9" in args.dataset_version:
-            valid_dataset_location = Path("/tmp") / "cvla-clevr-camRF-sceneF-9"
+            valid_dataset_location = Path("/tmp") / "cvla-clevr-camRF-sceneF-9-valid"
         elif "mix30obj-camRF-sceneR-9" in args.dataset_version:
-            valid_dataset_location = Path("/tmp") / "cvla-clevr-camRF-sceneR-9"
+            valid_dataset_location = Path("/tmp") / "cvla-clevr-camRF-sceneR-9-valid"
         elif "mix30obj-camRS-sceneF-9" in args.dataset_version:
-            valid_dataset_location = Path("/tmp") / "cvla-clevr-camRS-sceneF-9"
+            valid_dataset_location = Path("/tmp") / "cvla-clevr-camRS-sceneF-9-valid"
 
     else:
         dataset_location = Path("/tmp") / args.dataset_version
-        valid_dataset_location = Path("/tmp") / args.dataset_version    # + "-valid" 
+        valid_dataset_location = Path("/tmp") / (args.dataset_version + "-valid") 
 
     load_data_to_node(args.data_location, args.dataset_version)
 
