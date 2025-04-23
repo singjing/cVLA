@@ -512,7 +512,8 @@ def load_data_to_node(data_location="/work/dlclarge2/bratulic-cvla/", dataset_ve
         print('Data already copied.')
 
     valid_dataset = clevr_dataset + "-valid"
-     if not os.path.exists(f'/tmp/{valid_dataset}'):
+    
+    if not os.path.exists(f'/tmp/{valid_dataset}'):
         cmd3 = f"rsync -a --progress {data_location}/{valid_dataset}/ /tmp/{valid_dataset}/"
         subprocess.run(cmd3, shell=True, check=True)
 
