@@ -1,20 +1,18 @@
 import glob
 import time
-import h5py
+import json
 import random
 from pathlib import Path
+
+import h5py
 import torch
-from PIL import Image
-from collections import defaultdict
 import numpy as np
-import pickle
+from torch.utils.data import Dataset
 from mani_skill.utils.structs import Pose
+from cvla.utils_trajectory import DummyCamera
 from cvla.utils_traj_tokens import to_prefix_suffix
 from cvla.utils_traj_tokens import getActionEncInstance
-from cvla.utils_trajectory import DummyCamera
-from torch.utils.data import Dataset
 from cvla.data_augmentations import depth_to_color
-
 
 
 class H5Dataset(Dataset):
@@ -76,9 +74,15 @@ class H5Dataset(Dataset):
         
     def getitem_func(self, idx: int, force_augs=False):
         action_text = None
-        for x in self.h5_file[f'traj_{idx}/obs/extra'].keys():
-            if x.startswith("action_text_"):
-                action_text = str(x).replace("action_text_", "")
+        try:
+            raw_data = self.h5_file[f"traj_{idx}/obs_scene"][()]
+            decoded = json.loads(raw_data.decode("utf-8"))
+            action_text = decoded["text"]
+        except KeyError:
+            # Old style data for datasets version -8 and older.
+            for x in self.h5_file[f'traj_{idx}/obs/extra'].keys():
+                if x.startswith("action_text_"):
+                    action_text = str(x).replace("action_text_", "")
 
         frame_idx = slice(0, 1)
         obj_start = Pose(torch.tensor(self.h5_file[f"traj_{idx}/obs/extra/obj_start"][frame_idx]))
