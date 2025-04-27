@@ -340,7 +340,7 @@ class TrajectoryEncoder_xyzrotvec_1024xy:
         try:
             quat_c = torch.tensor(R.from_rotvec(rotvec).as_quat(scalar_first=True)).float()
         except ValueError as e:
-            print(caption)
+            raise ValueError(f"Failed to decode caption {caption}")
         
         return curve_25d, quat_c
 

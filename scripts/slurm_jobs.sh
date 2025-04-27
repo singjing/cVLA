@@ -2,7 +2,7 @@
 #SBATCH -p tflmb_gpu-rtx4090 # partition (queue)
 #SBATCH --mem 32000 # memory pool for all cores (20GB)
 #SBATCH -c 24 # number of cores
-#SBATCH -a 1-3 # array size
+#SBATCH -a 1-2 # array size
 #SBATCH --gres=gpu:1  # reserves one GPU
 #SBATCH -D /ihome/argusm/lang/cVLA # Change working_dir
 #SBATCH -o /work/dlclarge1/argusm-cvla/logs/%x.%N.%A.%a.out # STDOUT  (the folder log has to exist) %A will be replaced by the SLURM_ARRAY_JOB_ID value, whilst %a will be replaced by the SLURM_ARRAY_TASK_ID
@@ -39,10 +39,10 @@ if [ 2 -eq $SLURM_ARRAY_TASK_ID ]; then
     exit $?
 fi
 
-if [ 3 -eq $SLURM_ARRAY_TASK_ID ]; then
-    python scripts/hf_image_condition.py --dataset_version mix30obj-8 --save_path /data/lmbraid19/argusm/models --eval_dataset double --action_encoder  xyzrotvec-rbt-256 --extra_run_name xyzrotvec-rbt-256 
-    exit $?
-fi
+#if [ 3 -eq $SLURM_ARRAY_TASK_ID ]; then
+#    python scripts/hf_image_condition.py --dataset_version mix30obj-8 --save_path /data/lmbraid19/argusm/models --eval_dataset double --action_encoder  xyzrotvec-rbt-256 --extra_run_name xyzrotvec-rbt-256 
+#    exit $?
+#fi
 
 
 # if [ 1 -eq $SLURM_ARRAY_TASK_ID ]; then

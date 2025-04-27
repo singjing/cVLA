@@ -88,11 +88,8 @@ class cVLA_wrapped:
                 if "_depth" in str(model_path):
                     return_depth = True
 
-            model_name = model_path.parent.name    
-            if model_path.is_dir():
-                print("model:".ljust(10), model_name,"\t", model_path)
-                print("depth:".ljust(10), return_depth)
-
+            
+        self.model_path = model_path
 
         self.load_model(model_path, return_depth)
         self.enc_model = enc_model
@@ -101,6 +98,14 @@ class cVLA_wrapped:
 
         self.conditioning_dataset = None
         self.task_lookup = None
+
+    def print_summary(self):
+        model_name = self.model_path.parent.name
+        print("model:".ljust(10), model_name,"\t", self.model_path)
+        print("encoder:".ljust(10), self.enc_model.NAME)
+        print("depth:".ljust(10), self.return_depth)
+
+
 
     def set_conditioning_dataset(self, conditioning_dataset):
         self.conditioning_dataset = conditioning_dataset
