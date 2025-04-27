@@ -142,7 +142,8 @@ def render_example(image, label: str=None, prediction: str=None, camera=None, en
     ax.axis('off')
 
     if draw_state_coords:
-        robot_state = text.split(" ")[-1]
+        #robot_state = text.split(" ")[-1]
+        robot_state =text
         draw_coordinate_frame(robot_state, camera, enc_label, ax)        
     
     curve_25d, quat_c = None, None

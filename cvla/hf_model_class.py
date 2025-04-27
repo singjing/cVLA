@@ -82,6 +82,7 @@ class cVLA_wrapped:
                 action_enoder = model_info["action_encoder"]
                 enc_model = getActionEncInstance(action_enoder)
             else:
+                print("Warning: loading default encoder: xyzrotvec-cam-1024xy")
                 enc_model = getActionEncInstance("xyzrotvec-cam-1024xy")
                 return_depth = False
                 if "_depth" in str(model_path):

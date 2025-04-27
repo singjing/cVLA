@@ -575,8 +575,6 @@ def get_args():
     parser.add_argument("--warmup_ratio", type=float, default=0.05)
     parser.add_argument("--ft_more_params", action="store_true", help="Fine-tune more parameters in the model")
     
-
-
     return parser.parse_args()
 
 
@@ -627,12 +625,15 @@ def main():
         print(f"Encountered error {e.__class__.__name__}")
         print(e)
         traceback.print_exc()  # Prints the full traceback
-    
+    print("Done training.")
+
     # TRANSFER THE MODEL TO FINAL LOCATION
     os.system(f"mv {save_path}/* {save_path_final}/")
+    print(f"done copying {save_path} to {save_path_final}.")
 
-    print("Done training")
-
+    os.system(f"rm -r {save_path}")
+    print("done cleanup.")
+    
 
 if __name__ == "__main__":
     main()

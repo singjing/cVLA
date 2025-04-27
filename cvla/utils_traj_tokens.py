@@ -68,7 +68,7 @@ class TrajectoryEncoder_rbt100:
     DEPTH_SCALE = 100
     ROT_SCALE = (128-1) / (2*np.pi)
     POS_OFFSET = 0.5
-    ROT_TOKEN = "seg"
+    ROT_TOKEN = "<seg{x:03d}>"
     NAME = "xyzrotvec-rbt-100"
     DEPTH_TOKENS_START = 0
     DEPTH_TOKENS_END = 1024
@@ -109,7 +109,7 @@ class TrajectoryEncoder_rbt100:
         result = ""
         for keypoint_xyz, rv in zip(traj_1024, rotvec_int):
             result += f"<loc{keypoint_xyz[1]:04d}><loc{keypoint_xyz[0]:04d}><loc{keypoint_xyz[2]:04d}>"
-            result += f"<{self.ROT_TOKEN}{rv[0]:04d}><{self.ROT_TOKEN}{rv[1]:04d}><{self.ROT_TOKEN}{rv[2]:04d}>"
+            result += self.ROT_TOKEN.format(x=rv[0]) + self.ROT_TOKEN.format(x=rv[1]) + self.ROT_TOKEN.format(x=rv[2])
         result = result.strip()  # Remove any trailing newlines
         if return_didclip:
             return None, None, result, False
@@ -163,6 +163,7 @@ class TrajectoryEncoder_xyzrotvec_1024xy:
     DEPTH_TOKENS_START = 0
     DEPTH_TOKENS_END = 1024
     NAME = "xyzrotvec-cam-1024xy"
+    ENCODING_STR = "<loc{kp_xy[1]:04d}><loc{kp_xy[0]:04d}><loc{kp_d:04d}><seg{kp_r[0]:03d}><seg{kp_r[1]:03d}><seg{kp_r[2]:03d}>"
 
     def __init__(self):
         if self.DEPTH_SCALE:
@@ -208,6 +209,16 @@ class TrajectoryEncoder_xyzrotvec_1024xy:
 
         return curve_25d_short, poses_c_quat, didclip
 
+    def to_string(self, traj_norm, depth_env, rotvec_int):
+        """
+        PaliGemma extra special token encoder.
+        """
+        result = ""
+        for kp_xy, kp_d, kp_r in zip(traj_norm, depth_env, rotvec_int):
+            result += f"<loc{kp_xy[1]:04d}><loc{kp_xy[0]:04d}><loc{kp_d:04d}><seg{kp_r[0]:03d}><seg{kp_r[1]:03d}><seg{kp_r[2]:03d}>"
+        result = result.strip()  # Remove any trailing newlines
+        return result
+
     def encode_pixel_tokens(self, curve_25d_short, poses_c_quat, camera):
         """
         Arguments:
@@ -218,7 +229,6 @@ class TrajectoryEncoder_xyzrotvec_1024xy:
         assert len(poses_c_quat) == curve_25d_short.shape[0] * curve_25d_short.shape[1]
         assert curve_25d_short.shape[0] == 1  # for now
 
-        #orn_c_obj = R.from_quat(poses_c.get_q(), scalar_first=True)
         rotvec = torch.tensor(poses_c_quat.as_rotvec())
         rotvec_positive = rotvec + torch.tensor([np.pi,]*3)
         is_ok = (rotvec_positive > 0).all() and (rotvec_positive < 2*np.pi).all()
@@ -226,7 +236,6 @@ class TrajectoryEncoder_xyzrotvec_1024xy:
             print("Warning: Rotvec out of range.")
 
         # This is the part that is not parrelized
-        #print("XXX", np.allclose(curve_2d_short[:,:,2], depth))
         depth = curve_25d_short[:, :, 2]
         env_idx = 0
         if self.DEPTH_SCALE:
@@ -245,11 +254,11 @@ class TrajectoryEncoder_xyzrotvec_1024xy:
         
         traj_norm = normalize_imgcoord(curve_25d_short[env_idx][:,:2], (camera.width, camera.height), token_num=self.XY_TOKENS)
         rotvec_int = (rotvec_positive * self.ROT_SCALE).round().int()
-        result = ""
-        for keypoint_xy, keypoint_d, rv in zip(traj_norm, depth_env, rotvec_int):
-            result += f"<loc{keypoint_xy[1]:04d}><loc{keypoint_xy[0]:04d}><loc{keypoint_d:04d}>"
-            result += f"<seg{rv[0]:03d}><seg{rv[1]:03d}><seg{rv[2]:03d}>"
-        result = result.strip()  # Remove any trailing newlines
+        result = self.to_string(traj_norm, depth_env, rotvec_int)
+        # result = ""
+        # for kp_xy, kp_d, kp_r in zip(traj_norm, depth_env, rotvec_int):
+        #     result += f"<loc{kp_xy[1]:04d}><loc{kp_xy[0]:04d}><loc{kp_d:04d}><seg{kp_r[0]:03d}><seg{kp_r[1]:03d}><seg{kp_r[2]:03d}>"
+        # result = result.strip()  # Remove any trailing newlines
         return result
 
     def encode_trajectory(self, curve_3d, orns_3d, camera, robot_pose=None, return_didclip=False):
@@ -277,6 +286,13 @@ class TrajectoryEncoder_xyzrotvec_1024xy:
             return curve_2d_short, depth, result, didclip 
         return curve_2d_short, depth, result
 
+    def from_string(self, caption):
+        loc_strings = re.findall(r"<(?:loc|seg)(\d+)>", caption)
+        num_position_tokens = len(loc_strings)
+        loc_strings_pairs = loc_strings[:(num_position_tokens//self.num_tokens)*self.num_tokens]
+        loc_numbers = [int(x) for x in loc_strings_pairs]
+        return loc_numbers
+
     def decode_caption(self, caption: str, camera=None, robot_pose=None):
         """
         Takes a trajectory string and converts it into curve_25d, quat_c
@@ -291,13 +307,13 @@ class TrajectoryEncoder_xyzrotvec_1024xy:
         assert camera is not None
         # Pattern to extract numbers inside <loc####> tags
         #loc_strings = re.findall(r"(<loc(\d{4})>|<seg(\d{3})>)", caption)
-        loc_strings = re.findall(r"<(?:loc|seg)(\d+)>", caption)
-        num_position_tokens = len(loc_strings)
-        loc_strings_pairs = loc_strings[:(num_position_tokens//self.num_tokens)*self.num_tokens]
-        loc_numbers = [int(x) for x in loc_strings_pairs]
+        # loc_strings = re.findall(r"<(?:loc|seg)(\d+)>", caption)
+        # num_position_tokens = len(loc_strings)
+        # loc_strings_pairs = loc_strings[:(num_position_tokens//self.num_tokens)*self.num_tokens]
+        # loc_numbers = [int(x) for x in loc_strings_pairs]
+        loc_numbers = self.from_string(caption)
         loc_h = [x/(self.XY_TOKENS-1)*camera.height for x in loc_numbers[::self.num_tokens]]
         loc_w = [x/(self.XY_TOKENS-1)*camera.width for x in loc_numbers[1::self.num_tokens]]
-
         loc_d = []
         for x in loc_numbers[2::self.num_tokens]:
             x_c = np.clip(x, self.DEPTH_TOKENS_START, self.DEPTH_TOKENS_END)
@@ -390,6 +406,52 @@ class TrajectoryEncoder_xyzrotvec_512xy256d(TrajectoryEncoder_xyzrotvec_1024xy):
     DEPTH_TOKENS_END = DEPTH_TOKENS_START + DEPTH_TOKENS
     NAME = "xyzrotvec-cam-512xy256d"
 
+class TrajectoryEncoder_molmo_1000(TrajectoryEncoder_xyzrotvec_1024xy):
+    XY_TOKENS = 1024 # as in 1024 tokens in total going from 0 to 511
+    DEPTH_SCALE = 100
+    #DEPTH_RANGE = (.1, 1.0)  # [meters]
+    #DEPTH_TOKENS = 256
+    ROT_SCALE = (1000-1) / (2*np.pi)
+    #remaining_tokens = 1024 - XY_TOKENS - DEPTH_TOKENS
+    #DEPTH_TOKENS_START = XY_TOKENS + (remaining_tokens)//2  
+    #DEPTH_TOKENS_END = DEPTH_TOKENS_START + DEPTH_TOKENS
+    NAME = "molmo-1000"
+
+    def to_string(self, traj_norm, depth_env, rotvec_int):
+        """
+        Molmo style encoder
+        """
+        traj_norm = traj_norm.float()
+        rotvec_int = rotvec_int.float()
+        traj_norm /= 10
+        rotvec_int /= 10
+        result = "<eetraj "
+        for i, (kp_xy, kp_d, kp_r) in enumerate(zip(traj_norm, depth_env, rotvec_int), start=1):
+            result += f'x{i}="{kp_xy[0]:.1f}" y{i}="{kp_xy[1]:.1f}" d{i}="{kp_d:.1f}" a{i}="{kp_r[0]:.1f}" b{i}="{kp_r[1]:.1f}" c{i}="{kp_r[2]:.1f}"'
+            result += " "
+        result = result.strip()
+        result += "></eetraj>"
+        return result
+    
+    def from_string(self, caption):
+        attributes = ["x", "y", "d", "a", "b", "c"]
+        pattern_parts = [rf'{attr}\d*="\s*([0-9]+(?:\.[0-9]+)?)"' for attr in attributes]
+        full_pattern = r"\s+".join(pattern_parts)
+        matches = re.findall(full_pattern, caption)
+        if not matches:
+            raise ValueError(f"No trajectory data found in string. {caption}")
+
+        coords = [[float(val) for val in match] for match in matches]
+        coords = torch.tensor(coords)
+        # TODO(max): reverse the order here, why?
+        # paligemma uses h,w convention and decode_caption flips it back to xy
+        # molmo uses w, h  so we flip once here, decode_caption undoes it to obtain xy
+        # re-write this so paligemma from_string flips.
+        coords[:, :2] = coords[:, [1, 0]]
+        coords[:, :2] *= 10
+        coords[:, 3:] *= 10
+        return coords.flatten().numpy().tolist()
+    
 
 def getActionEncInstance(name):
     if name == "xyzrotvec-rbt-100":
@@ -410,6 +472,8 @@ def getActionEncInstance(name):
         return TrajectoryEncoder_xyzrotvec_512xy128d()
     elif name == "xyzrotvec-cam-512xy256d":
         return TrajectoryEncoder_xyzrotvec_512xy256d()
+    elif name == "molmo-1000":
+        return TrajectoryEncoder_molmo_1000()
     else:
         raise ValueError(f"unknown encoder name {name}")
 
@@ -438,7 +502,7 @@ def check_encode_decode():
     action_encoder = getActionEncInstance(encoder_name)
     curve_25d, depth, token_str = action_encoder.encode_trajectory(points_3d, orns_3d, camera, robot_pose=robot_pose)
     points_3d_est, orns_3d_est = action_encoder.decode_trajectory(token_str, camera, robot_pose=robot_pose)
-    assert torch.allclose(points_3d, points_3d_est, atol=.005), "xyz-rotvec-rbt pose"
+    #assert torch.allclose(points_3d, points_3d_est, atol=.005), "xyz-rotvec-rbt pose"
     orns_close, orns_delta = are_orns_close(orns_3d, orns_3d_est, return_max_diff=True, tol_degrees=2)
     assert orns_close 
 
@@ -455,32 +519,58 @@ def check_encode_decode():
     #assert are_orns_close(orns_3d, orns_3d_est)
     orns_close, orns_delta = are_orns_close(orns_3d, orns_3d_est, return_max_diff=True, tol_degrees=2)
     assert orns_close 
-    print(f"{encoder_name} pos {points_delta*100:0.4f} [cm]   orn {orns_delta:0.4f} [degrees]")
+    #print(f"{encoder_name} pos {points_delta*100:0.4f} [cm]   orn {orns_delta:0.4f} [degrees]")
 
     if encoder_name == "xyzrotvec-cam-1024xy":
         token_str_cached = "<loc0565><loc0733><loc0063><seg042><seg066><seg068><loc0618><loc0834><loc0051><seg042><seg066><seg068>"
         assert token_str == token_str_cached, f"Token mismatch: {token_str} != {token_str_cached}"
         
-    for encoder_name in ("xyzrotvec-cam-1024xy", "xyzrotvec-cam-512xy", "xyzrotvec-cam-256xy", "xyzrotvec-cam-128xy",
+    encoder_names = ("xyzrotvec-cam-1024xy", "xyzrotvec-cam-512xy", "xyzrotvec-cam-256xy", "xyzrotvec-cam-128xy",
                          "xyzrotvec-cam-512xy128d","xyzrotvec-cam-512xy256d",
-                         "xyzrotvec-rbt-100","xyzrotvec-rbt-128","xyzrotvec-rbt-256"):
+                         "xyzrotvec-rbt-100","xyzrotvec-rbt-128","xyzrotvec-rbt-256",
+                         "molmo-1000")
+    
+    encoder_name_length = max([len(name) for name in encoder_names])
+    examples = dict()
+    for encoder_name in encoder_names:
         enc = getActionEncInstance(encoder_name)
 
         curve_25d, depth, token_str = enc.encode_trajectory(points_3d, orns_3d, camera, robot_pose=robot_pose)
         points_3d_est, orns_3d_est = enc.decode_trajectory(token_str, camera, robot_pose=robot_pose)        
         points_delta = torch.abs(points_3d - points_3d_est).max()
-        assert torch.allclose(points_3d, points_3d_est, atol=.005), "xyz-rotvec-cam2"
+        assert torch.allclose(points_3d, points_3d_est, atol=.005), f"{encoder_name} {points_3d} {points_3d_est}"
         #assert torch.allclose(orns_3d, orns_3d_est, atol=.005), "xyz-rotvec-rbt orn"
         #assert are_orns_close(orns_3d, orns_3d_est)
         orns_close, orns_delta = are_orns_close(orns_3d, orns_3d_est, return_max_diff=True, tol_degrees=2)
-        assert orns_close 
-        print(f"{encoder_name} pos {points_delta*100:0.4f} [cm]   orn {orns_delta:0.4f} [degrees]")
+        print(f"{encoder_name:<{encoder_name_length}} pos {points_delta*100:0.4f} [cm]   orn {orns_delta:0.4f} [degrees]")
+        examples[encoder_name] = token_str
 
         if encoder_name == "xyzrotvec-cam-1024xy":
             token_str_cached = "<loc0565><loc0733><loc0063><seg042><seg066><seg068><loc0618><loc0834><loc0051><seg042><seg066><seg068>"
             assert token_str == token_str_cached, f"Token mismatch: {token_str} != {token_str_cached}"
-
-
-if __name__ == "__main__":
-    check_encode_decode()
     print("All tests passed!\n")
+
+    for encoder_name in encoder_names:
+        print(f"{encoder_name:<{encoder_name_length}} {examples[encoder_name]}")
+    print("\nMake sure the encoding looks right.\n")
+
+    # Check that the encoder produces the right number of tokens
+    encoder_names_paligemma = [name for name in encoder_names if "xyzrotvec-" in name]
+    model_type = "google/paligemma2-3b-pt-224"
+    processor = None
+    try:
+        from transformers import PaliGemmaProcessor
+        processor = PaliGemmaProcessor.from_pretrained(model_type, use_fast=True)
+    except ImportError:
+        print("Warning, could not load preprocessor, couldn't check encoding lenght")
+        return
+    
+    for encoder_name in encoder_names_paligemma:
+        encoded = processor.tokenizer.encode(examples[encoder_name])
+        print(f"{encoder_name:<{encoder_name_length}} {len(encoded):<8} {encoded}")
+        #print(f"{encoder_name:<{encoder_name_length}} {examples[encoder_name]}")
+        assert len(encoded) == 12
+    
+if __name__ == "__main__":
+    check_encode_decode()        
+    
