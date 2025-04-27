@@ -25,7 +25,7 @@ def check_if_valid(decoded_preds, decoded_labels):
 
 
 class Evaluator:
-    def __init__(self, encoder, eval_dummy_camera, encoder_labels=None):
+    def __init__(self, encoder, camera_fixed, encoder_labels=None, robot_pose_fixed=None):
         self.decode_caption_labels = encoder.decode_caption
         self.decode_caption_preds = encoder.decode_caption
         self.decode_trajectory_labels = encoder.decode_trajectory
@@ -33,10 +33,11 @@ class Evaluator:
         if encoder_labels is not None:
             self.decode_caption_labels = encoder_labels.decode_caption
             self.decode_trajectory_labels = encoder_labels.decode_trajectory
-        self.eval_dummy_camera = eval_dummy_camera
-        self.eval_dummy_camera.extrinsic_matrix = torch.tensor([[[1, 0, 0, 0.0], [0, 1, 0, 0], [0, 0, 1, 0]]])
-        self.h_image = self.eval_dummy_camera.height
-        self.w_image = self.eval_dummy_camera.width
+        self.camera_fixed = camera_fixed
+        self.camera_fixed.extrinsic_matrix = torch.tensor([[[1, 0, 0, 0.0], [0, 1, 0, 0], [0, 0, 1, 0]]])
+        self.h_image = self.camera_fixed.height
+        self.w_image = self.camera_fixed.width
+        self.robot_pose_fixed = robot_pose_fixed
 
         self.all_data = dict(
             cam=dict(pred=dict(orn=[], pos=[]), data=dict(orn=[], pos=[])),
@@ -51,7 +52,7 @@ class Evaluator:
         self.max_l2 = np.sqrt(self.w_image**2 + self.h_image**2)
 
 
-    def evaluate(self, decoded_preds: str, decoded_labels: str, camera=None):
+    def evaluate(self, decoded_preds: str, decoded_labels: str, camera=None, robot_pose=None):
         """
         Arguments:
             decoded_preds: predictions decoded from the llm (so as strings)
@@ -59,13 +60,17 @@ class Evaluator:
         """
         self.total_counter += 1 
         
+        
         if not check_if_valid(decoded_preds, decoded_labels):   # either not enough tokens or wrong order
             return
         
         self.valid_counter += 1
 
         if camera is None:
-            camera = self.eval_dummy_camera
+            camera = self.camera_fixed
+            
+        if robot_pose is None:
+            robot_pose = self.robot_pose_fixed
 
         for mode in ("cam", "cart"):    
             if mode == "cam":
@@ -74,8 +79,8 @@ class Evaluator:
                 dec_func_preds, dec_func_lab = self.decode_trajectory_preds, self.decode_trajectory_labels
 
             try:
-                pos_data, orn_data = dec_func_lab(decoded_labels, camera=camera)
-                pos_pred, orn_pred = dec_func_preds(decoded_preds, camera=camera)
+                pos_data, orn_data = dec_func_lab(decoded_labels, camera=camera, robot_pose=robot_pose)
+                pos_pred, orn_pred = dec_func_preds(decoded_preds, camera=camera, robot_pose=robot_pose)
             except ValueError:
                 print("skipping")
                 continue

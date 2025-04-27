@@ -18,7 +18,8 @@ from cvla.data_augmentations import depth_to_color
 class H5Dataset(Dataset):
     def __init__(self, h5_file_or_dir, return_depth=False, augment_depth=None, depth_to_color=True,
                  augment_rgbds=None, augment_rgb=None, augment_text=None, return_only_prefix=False,
-                 action_encoder="xyzrotvec-cam-1024xy", limit_samples=None, augment_rgb_forced=None):
+                 action_encoder="xyzrotvec-cam-1024xy", limit_samples=None, augment_rgb_forced=None,
+                 return_robot_pose=False):
         """
         The augment functions are applied in order same order as the order of arguments.
         """
@@ -49,6 +50,7 @@ class H5Dataset(Dataset):
         self.depth_to_color = depth_to_color
         self.augment_rgb_forced = augment_rgb_forced        # only for copy-pasting when needed
 
+        self.return_robot_pose = return_robot_pose
         self.return_only_prefix = return_only_prefix        # used only for paired dataset for setup
 
     def __len__(self):
@@ -111,6 +113,9 @@ class H5Dataset(Dataset):
             entry["camera_intrinsic"] = camera_intrinsic
             entry["camera_extrinsic"] = camera_extrinsic
             return entry
+
+        if self.return_robot_pose:
+            entry["robot_pose"] = robot_pose
 
         depth = None
         seg = None

@@ -145,9 +145,14 @@ def get_collate_fn(processor, num_images_in_context, image_order, TORCH_DTYPE, a
     return collate_fn
 
 
-def get_compute_metrics_fn(processor, max_tokens, eval_dummy_camera, action_encoder, action_encoder_labels=None):
-    eval_dummy_camera.extrinsic_matrix = torch.tensor([[[1, 0, 0, 0.0], [0, 1, 0, 0], [0, 0, 1, 0]]])
-    evaluator = Evaluator(action_encoder, eval_dummy_camera, encoder_labels=action_encoder_labels)
+def get_compute_metrics_fn(processor, max_tokens, camera_fixed, action_encoder, action_encoder_labels=None):
+    # Warning: this code assumes that the camera and robot pose are fixed, need to pass the eval datasets here and get real values
+    # TODO(max): pass eval dataset
+    # robot pose is only needed for action in robot coords, where the robot is not located at origin (i.e. simulation)
+    camera_fixed.extrinsic_matrix = torch.tensor([[[1, 0, 0, 0.0], [0, 1, 0, 0], [0, 0, 1, 0]]])
+    from mani_skill.utils.structs import Pose
+    robot_pose = Pose(torch.tensor([[-6.1500e-01,  7.2760e-11, -1.4901e-08,  1.0000e+00,  0.0000e+00, 0.0000e+00,  0.0000e+00]]))
+    evaluator = Evaluator(action_encoder, camera_fixed, encoder_labels=action_encoder_labels, robot_pose_fixed=robot_pose)
 
     def compute_metrics(eval_pred):
         predictions, labels = eval_pred    
@@ -616,7 +621,7 @@ def main():
 
     # SETTING UP THE TRAINER
     trainer = get_trainer(args, model, processor, train_dataset, eval_sim_dataset, eval_real_dataset, collate_fn, save_path, eval_sim_dummy_camera, eval_real_dummy_camera, action_encoder, eval_sim_action_encoder, eval_real_action_encoder)
-    
+
     # TRAINING THE MODEL
     import traceback
     try:
