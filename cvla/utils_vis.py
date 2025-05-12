@@ -94,7 +94,8 @@ def draw_probas_edge(image, pred_scores):
 
     return image
 
-def render_example(image, label: str=None, prediction: str=None, camera=None, enc=None, enc_pred=None, text: str=None, i=0, extra_text: str=None):
+def render_example(image, label: str=None, prediction: str=None, camera=None, enc=None, enc_pred=None, text: str=None, i=0, extra_text: str=None,
+                   draw_state_coords = True, draw_pred_coords = True, draw_label_coords = True):
     """
     Render an example image to HTML, e.g., for use in notebooks.
     Arguments:
@@ -127,9 +128,6 @@ def render_example(image, label: str=None, prediction: str=None, camera=None, en
         camera = get_standard_camera(image_width, image_height)
 
     # logic for when to draw coords
-    draw_state_coords = True
-    draw_pred_coords = True
-    draw_label_coords = True
     if prediction is not None:
         draw_label_coords = False
 

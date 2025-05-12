@@ -144,17 +144,17 @@ class JSONLDataset(Dataset):
             if self.augment_crop:
                 assert self.depth_to_color
                 orig_entry = entry["suffix"]
-                image, suffix_new = self.augment_crop(image, orig_entry, self.action_encoder)  # adjust suffix
+                image, suffix_new, camera_new = self.augment_crop(image, orig_entry, self.action_encoder, orig_entry["camera"])  # adjust suffix
                 depth = torch.tensor(depth)
                 depth, _ = self.augment_crop(depth, orig_entry, self.action_encoder)
                 entry["suffix"] = suffix_new
+                entry["camera"] = camera_new
 
             return (depth, image), entry
         
         if self.augment_crop:
             assert self.return_depth == False
-            image, entry["suffix"] = self.augment_crop(image, entry["suffix"], self.action_encoder)  # adjust suffix
-            
+            image, entry["suffix"], entry["camera"] = self.augment_crop(image, entry["suffix"], self.action_encoder, entry["camera"])  # adjust suffix
         return image, entry
 
 

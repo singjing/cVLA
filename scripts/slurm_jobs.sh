@@ -30,12 +30,12 @@ conda activate paligemma
 # fi
 
 if [ 1 -eq $SLURM_ARRAY_TASK_ID ]; then
-    python scripts/hf_image_condition.py --dataset_version mix30obj-8 --save_path /data/lmbraid19/argusm/models --eval_dataset double --action_encoder xyzrotvec-rbt-100 --extra_run_name xyzrotvec-rbt-100 
+    python scripts/hf_image_condition.py --dataset_version mix30obj-8 --save_path /data/lmbraid19/argusm/models --eval_dataset double --action_encoder xyzrotvec-rbt-512 --extra_run_name xyzrotvec-rbt-512
     exit $?
 fi
 
 if [ 2 -eq $SLURM_ARRAY_TASK_ID ]; then
-    python scripts/hf_image_condition.py --dataset_version mix30obj-8 --save_path /data/lmbraid19/argusm/models --eval_dataset double --action_encoder  xyzrotvec-rbt-128 --extra_run_name xyzrotvec-rbt-128 
+    python scripts/hf_image_condition.py --dataset_version mix30obj-8 --save_path /data/lmbraid19/argusm/models --eval_dataset double --action_encoder  xyzrotvec-rbt-1024 --extra_run_name xyzrotvec-rbt-1024
     exit $?
 fi
 

@@ -374,6 +374,15 @@ class TrajectoryEncoder_rbt256(TrajectoryEncoder_rbt100):
     DEPTH_SCALE = 256
     NAME = "xyzrotvec-rbt-256"
 
+class TrajectoryEncoder_rbt512(TrajectoryEncoder_rbt100):
+    DEPTH_SCALE = 512
+    NAME = "xyzrotvec-rbt-512"
+
+class TrajectoryEncoder_rbt1024(TrajectoryEncoder_rbt100):
+    DEPTH_SCALE = 1024
+    NAME = "xyzrotvec-rbt-1024"
+
+
 class TrajectoryEncoder_xyzrotvec_512xy(TrajectoryEncoder_xyzrotvec_1024xy):
     XY_TOKENS = 512  # as in 1024 tokens in total going from 0 to 511
     NAME = "xyzrotvec-cam-512xy"
@@ -460,6 +469,10 @@ def getActionEncInstance(name):
         return TrajectoryEncoder_rbt128()
     elif name == "xyzrotvec-rbt-256":
         return TrajectoryEncoder_rbt256()
+    elif name == "xyzrotvec-rbt-512":
+        return TrajectoryEncoder_rbt512()
+    elif name == "xyzrotvec-rbt-1024":
+        return TrajectoryEncoder_rbt1024()
     elif name == "xyzrotvec-cam-1024xy":
         return TrajectoryEncoder_xyzrotvec_1024xy()
     elif name == "xyzrotvec-cam-512xy":

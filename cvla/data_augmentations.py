@@ -329,6 +329,7 @@ class CropStart:
 
         return crop, suffix_new
 
+# TODO(max): make this more explicit that it relies on labels.
 class CropMiddle:
     def __init__(self, crop_size: int, object_size: int, valid: bool):
         """
@@ -405,6 +406,36 @@ class CropMiddle:
             suffix_new += "<loc{a[0]:04d}><loc{a[1]:04d}><loc{a[2]:04d}><seg{a[3]:03d}><seg{a[4]:03d}><seg{a[5]:03d}>".format(a=x)
 
         return crop, suffix_new
+
+from copy import deepcopy
+class CropCenter():
+    def __init__(self, crop_size: int):
+        """
+        Arguments:
+            image: PIL.Image (h w c)
+            suffix (12) = obj_start (h w d rv0 rv1 rv2), obj_end (h w d rv0 rv1 rv2)
+
+            crop_size: int, total width of crop
+            object_size: int, size of start and end objects in pixels
+            
+        Crop at center between start and end objects.
+        Shift coor center to crop center and set crop size as maximum coordinate.
+        """
+        self.crop_size = crop_size
+        print("Warning: cropping without adjusting labels!")
+
+    def __call__(self, image: Image, suffix: str, enc, camera):
+        """
+        Arguments: see __init__()
+        """
+        suffix_new = "<overwritten by crop>"
+        crop = v2.functional.center_crop(image, self.crop_size)
+        camera_new = deepcopy(camera)
+        camera.width = self.crop_size
+        camera.height = self.crop_size
+        return  crop, suffix_new, camera_new
+
+
 
 def test_obj_start_crop():
     """
