@@ -297,7 +297,8 @@ class cVLA_wrapped:
     def get_demonstration_image(self, task):
         if self.task_lookup is not None and task in self.task_lookup:
             available_images = self.task_lookup[task]["images"]
-            random_demonstration = np.random.choice(available_images)
+            random_demonstration = available_images[0]  # to be consistent
+            # random_demonstration = np.random.choice(available_images)
             image, entry = self.conditioning_dataset.raw_dataset[random_demonstration]
             if isinstance(image, list):
                 depth = image[0]
