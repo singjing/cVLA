@@ -120,7 +120,6 @@ class cVLA_wrapped:
         processor = PaliGemmaProcessor.from_pretrained(MODEL_ID)
         print("loaded processor.")
         model = PaliGemmaForConditionalGeneration.from_pretrained(model_path, torch_dtype=TORCH_DTYPE, device_map="auto")
-
         if self.conditioning == "trajectory":
              def collate_fn(batch):
                 images, labels, depths = zip(*batch)        # images will be lists of lists since one batch input has multiple images
@@ -160,6 +159,7 @@ class cVLA_wrapped:
 
                 return inputs
         else:
+
             if return_depth:
                 def collate_fn(batch):
                     images, labels = zip(*batch)
@@ -230,16 +230,16 @@ class cVLA_wrapped:
             
         else:
             entry_dict = dict(prefix=prefix)
-
-            depth, image = images
+            
             if self.return_depth:
+                depth, image = images
                 depth = depth.detach().cpu().numpy().squeeze()
                 depth = np.clip(depth, 0, 1023)  # depth im [mm]
                 depth = depth_to_color(depth)
                 depth = np.clip((depth * 255).round(), 0, 255).astype(np.uint8)
                 images = (depth, image)
             else:
-                images = image
+                images = images
             #print(image.shape, depth.shape)
             batch = [(images, entry_dict)]  # batch size of 1
 
