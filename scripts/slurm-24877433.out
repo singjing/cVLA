@@ -1,0 +1,2 @@
+cpu-bind=MASK - lmbgpu11, task  0  0 [5162]: mask 0xfffffff0fffffff0fffffff0fffffff set
+slurmstepd-lmbgpu11: error: *** JOB 24877433 ON lmbgpu11 CANCELLED AT 2025-10-02T07:42:55 ***

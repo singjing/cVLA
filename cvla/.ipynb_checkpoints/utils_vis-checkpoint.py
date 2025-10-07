@@ -9,7 +9,6 @@ from scipy.spatial.transform import Rotation
 from cvla.utils_traj_tokens import getActionEncInstance
 from cvla.utils_trajectory import DummyCamera, project_points, convert_to_tensor
 
-
 def get_standard_camera(image_height, image_width):
     camera_extrinsic = [[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]]
     camera_intrinsic = [[[410.029, 0.0, 224.0], [0.0, 410.029, 224.0], [0.0, 0.0, 1.0]]]
@@ -43,7 +42,6 @@ def draw_coordinate_frame(label, camera, enc, ax, axis_length=0.05):
     # TODO(max): this is maxims bad code, should use same functions as utils_trajectory.py
     # Decode 3D trajectory (positions and quaternions)
     curve_w, quat_w = enc.decode_trajectory(label, camera)
-
     # Define local coordinate frame axes
     origin = np.array([0, 0, 0])
     x_axis = np.array([axis_length, 0, 0])

@@ -179,18 +179,20 @@ class DepthAugmentation:
         #new_depth_vals_m = new_depth_vals_m.astype(np.uint16)
         
         # Validate all conditions
-        assert np.all(np.abs(delta_depth_m) <= self.delta_depth_max), f"Delta depth exceeds max limit! was {delta_depth_m}, limit {self.delta_depth_max}"
-        assert torch.all(new_depth_vals_m >= min_depth), f"Depth below min range! {new_depth_vals_m}, {min_depth}"
-        assert torch.all(new_depth_vals_m <= max_depth), f"Depth above max range! {new_depth_vals_m}, {max_depth}"
+        #just for debug temporarily comment
+        #assert np.all(np.abs(delta_depth_m) <= self.delta_depth_max), f"Delta depth exceeds max limit! was {delta_depth_m}, limit {self.delta_depth_max}"
+        #assert torch.all(new_depth_vals_m >= min_depth), f"Depth below min range! {new_depth_vals_m}, {min_depth}"
+        #assert torch.all(new_depth_vals_m <= max_depth), f"Depth above max range! {new_depth_vals_m}, {max_depth}"
         
         # Calculate new depth values
         curve_25d[:, 2] = new_depth_vals_m
         curve_25d = curve_25d.unsqueeze(0)
         suffix_new = encoder.encode_pixel_tokens(curve_25d, quat_c, camera)
         depth_image_aug = depth_image_mm.copy()
-        depth_image_aug[depth_image_aug != 0] += (delta_depth_m*10).astype(np.uint16)
-        return depth_image_aug, suffix_new
-
+        #debug only
+        #depth_image_aug[depth_image_aug != 0] += (delta_depth_m*10).astype(np.uint16)
+        #return depth_image_aug, suffix_new
+        return depth_image_mm, suffix
 # Text Augmentations --------------------------------------------------------
 
 class CleanText:

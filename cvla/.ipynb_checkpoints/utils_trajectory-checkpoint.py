@@ -51,7 +51,7 @@ def project_point(camera, point_3d):
     # Normalize by the z-coordinate to get 2D image coordinates
     num_point = len(point_3d)
     #point_image_n = point_image_h[:, :2] / point_image_h[:, 2]
-    point_image_n = point_image_h[:, :2] / point_image_h[:, 2:3]
+    point_image_n = point_image_h[:, :num_point] / point_image_h[:, num_point]
     return point_image_n
 
 def convert_to_tensor(matrix):

@@ -97,6 +97,12 @@ class H5Dataset(Dataset):
         camera_extrinsic = self.h5_file[f"traj_{idx}/obs/sensor_param/render_camera/extrinsic_cv"][frame_idx]
         
         image = self.h5_file[f'traj_{idx}/obs/sensor_data/render_camera/rgb'][0]
+        #top = self.h5_file[f'traj_{idx}/obs/sensor_data/top_camera/rgb'][0]
+        sensor_data = self.h5_file[f"traj_{idx}/obs/sensor_data"]
+        if "top_camera" in sensor_data:
+            top = sensor_data["top_camera/rgb"][0]
+        else:
+            top = None
         width, height, c = image.shape
         camera = DummyCamera(camera_intrinsic, camera_extrinsic, width, height)
 
@@ -145,6 +151,8 @@ class H5Dataset(Dataset):
                 depth = np.clip((depth * 255).round(), 0, 255).astype(np.uint8)
             else:
                 depth = depth[:, :, 0] # depth im [mm]
-            return [depth, image], entry
+            #return [depth, image],  entry
+            return [image, top], entry
         
         return image, entry
+        
