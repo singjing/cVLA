@@ -141,7 +141,7 @@ class H5Dataset(Dataset):
             if depth is None:
                 depth = self.h5_file[f'traj_{idx}/obs/sensor_data/render_camera/depth'][0][:,:,0]
                 depth = np.clip(depth, 0, 1023)  # depth im [mm]
-
+            '''
             if self.augment_depth is not  None:
                 depth, suffix = self.augment_depth(depth, entry["suffix"], self.action_encoder, camera)
                 entry["suffix"] = suffix
@@ -151,7 +151,8 @@ class H5Dataset(Dataset):
                 depth = np.clip((depth * 255).round(), 0, 255).astype(np.uint8)
             else:
                 depth = depth[:, :, 0] # depth im [mm]
-            #return [depth, image],  entry
+            return [depth, image],  entry
+            '''
             return [image, top], entry
         
         return image, entry

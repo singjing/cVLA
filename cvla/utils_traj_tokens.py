@@ -1,5 +1,6 @@
 # PaliGemma tokenize vocabulary with 1024 entries that represent coordinates in normalized image-space (<loc0000>...<loc1023>)
 import numpy as np
+from numpy import asarray
 import torch
 import re
 from pdb import set_trace
