@@ -250,9 +250,10 @@ class TrajectoryEncoder_xyzrotvec_1024xy:
         
         depth_env_o = depth_int + self.DEPTH_TOKENS_START
         depth_env = np.clip(depth_env_o, self.DEPTH_TOKENS_START, self.DEPTH_TOKENS_END)
+        '''
         if not torch.allclose(depth_env,depth_env_o):
             print("Warning: depth out of range.", depth_env)
-        
+        '''
         traj_norm = normalize_imgcoord(curve_25d_short[env_idx][:,:2], (camera.width, camera.height), token_num=self.XY_TOKENS)
         rotvec_int = (rotvec_positive * self.ROT_SCALE).round().int()
         result = self.to_string(traj_norm, depth_env, rotvec_int)

@@ -3,6 +3,7 @@ import time
 import json
 import random
 from pathlib import Path
+import cv2
 
 import h5py
 import torch
@@ -103,6 +104,17 @@ class H5Dataset(Dataset):
             top = sensor_data["top_camera/rgb"][0]
         else:
             top = None
+        '''
+        #resize the image
+        target_size = (512, 512)
+        image = cv2.resize(image, target_size, interpolation=cv2.INTER_AREA)
+        if top is not None:
+            top = cv2.resize(top, target_size, interpolation=cv2.INTER_AREA)
+
+        # 🔽 更新 camera 的分辨率（关键）
+        #camera = DummyCamera(camera_intrinsic, camera_extrinsic, *target_size)
+
+        '''
         width, height, c = image.shape
         camera = DummyCamera(camera_intrinsic, camera_extrinsic, width, height)
 
@@ -141,19 +153,23 @@ class H5Dataset(Dataset):
             if depth is None:
                 depth = self.h5_file[f'traj_{idx}/obs/sensor_data/render_camera/depth'][0][:,:,0]
                 depth = np.clip(depth, 0, 1023)  # depth im [mm]
-            '''
+                
+            
             if self.augment_depth is not  None:
                 depth, suffix = self.augment_depth(depth, entry["suffix"], self.action_encoder, camera)
                 entry["suffix"] = suffix
+
+            #depth = cv2.resize(depth, target_size, interpolation=cv2.INTER_NEAREST)  # 
             
             if self.depth_to_color:
                 depth = depth_to_color(depth)
                 depth = np.clip((depth * 255).round(), 0, 255).astype(np.uint8)
             else:
                 depth = depth[:, :, 0] # depth im [mm]
-            return [depth, image],  entry
-            '''
-            return [image, top], entry
+            
+            return [image, depth],  entry
+
+            #return [image, top], entry
         
         return image, entry
         
