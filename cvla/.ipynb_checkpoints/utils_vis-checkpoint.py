@@ -8,6 +8,7 @@ from scipy.spatial.transform import Rotation
 
 from cvla.utils_traj_tokens import getActionEncInstance
 from cvla.utils_trajectory import DummyCamera, project_points, convert_to_tensor
+import torch
 
 def get_standard_camera(image_height, image_width):
     camera_extrinsic = [[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]]
@@ -62,6 +63,7 @@ def draw_coordinate_frame(label, camera, enc, ax, axis_length=0.05):
             transform_3d(z_axis, transform)
         ])[None]  # Shape (1, 4, 3)
         points_2d = project_points(camera, convert_to_tensor(points_world))[0, :, :2]
+        points_2d = points_2d.to(torch.float32).cpu().numpy()
         c, x, y, z = points_2d
         ax.plot([c[0], x[0]], [c[1], x[1]], '.-', color='red')
         ax.plot([c[0], y[0]], [c[1], y[1]], '.-', color='green')
@@ -149,6 +151,17 @@ def render_example(image, label: str=None, prediction: str=None, camera=None, en
         pass
     if curve_25d is not None:
         curve_2d  = curve_25d[:, :2]
+        
+    
+        if isinstance(curve_2d, torch.Tensor):
+            # 有些模型输出在 bf16，需要强制转 float32
+            if curve_2d.dtype == torch.bfloat16 or curve_2d.dtype == torch.float16:
+                curve_2d = curve_2d.to(torch.float32)
+            curve_2d = curve_2d.detach().cpu().numpy()
+    
+        elif isinstance(curve_2d, np.ndarray):
+            if curve_2d.dtype != np.float32 and curve_2d.dtype != np.float64:
+                curve_2d = curve_2d.astype(np.float32)
         ax.plot(curve_2d[:, 0], curve_2d[:, 1],'.-', color='green', linewidth=2)
         if draw_label_coords:
             draw_coordinate_frame(label, camera, enc_label, ax)            

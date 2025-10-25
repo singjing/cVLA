@@ -340,7 +340,8 @@ class TrajectoryEncoder_xyzrotvec_1024xy:
         rotvec_positive = torch.tensor((loc_r0, loc_r1, loc_r2)).T
         rotvec = rotvec_positive - torch.tensor([np.pi,]*3)
         try:
-            quat_c = torch.tensor(R.from_rotvec(rotvec).as_quat(scalar_first=True)).float()
+            rotvec_np = rotvec.to(torch.float32).cpu().numpy()  
+            quat_c = torch.tensor(R.from_rotvec(rotvec_np).as_quat(scalar_first=True)).float()
         except ValueError as e:
             raise ValueError(f"Failed to decode caption {caption}")
         
@@ -361,6 +362,10 @@ class TrajectoryEncoder_xyzrotvec_1024xy:
                                         q=extrinsic_orn.as_quat(scalar_first=True))
         quat_w = extrinsic.inv() * Pose.create_from_pq(q=quat_c)
         curve_w = unproject_points(camera, curve_25d) 
+
+        #change the type
+        curve_w = curve_w.to(torch.float32)
+        quat_w = quat_w.to(torch.float32)
 
         return curve_w, quat_w.get_q().unsqueeze(0)  # shape (P, 3 = u, v, d)
 

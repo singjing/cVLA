@@ -5,9 +5,14 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
+import torch
 
 
 def batch_multiply(tensor_A, tensor_B):
+    if tensor_A.dtype != tensor_B.dtype:
+        target_dtype = torch.float32
+        tensor_A = tensor_A.to(target_dtype)
+        tensor_B = tensor_B.to(target_dtype)
     # Reshape tensor_B to (N, 4, 1) to enable batch matrix multiplication
     tensor_B = tensor_B.unsqueeze(-1)
     # Perform batch matrix multiplication
@@ -51,8 +56,8 @@ def project_point(camera, point_3d):
     # Normalize by the z-coordinate to get 2D image coordinates
     num_point = len(point_3d)
     #point_image_n = point_image_h[:, :2] / point_image_h[:, 2]
-    point_image_n = point_image_h[:, :num_point] / point_image_h[:, num_point]
-    return point_image_n
+    point_image_n = point_image_h[:, :2] / point_image_h[:, 2:3]
+    return point_image_n.to(torch.float32)
 
 def convert_to_tensor(matrix):
     if isinstance(matrix, torch.Tensor):
@@ -83,35 +88,63 @@ def project_points(camera, points_3d, return_depth=False):
     Projects a batch of 3D points onto the 2D image plane.
     
     Parameters:
-    - camera: An instance of the Camera class with necessary methods.
-    - points_3d: A tensor of shape (N, P, 3) representing the 3D points in world coordinates.
-    
+    - camera: camera object with get_extrinsic_matrix() and get_intrinsic_matrix()
+    - points_3d: Tensor (N, P, 3)
+    - return_depth: whether to append depth in last channel
+
     Returns:
-    - xy: a tensor of shape (N, P, 2) representing the 2D image coordinates.
-    - depth: a tensor of shape (N, P) representing the depth of each point.
-
+    - points_2d: (N, P, 2) or (N, P, 3) if return_depth=True
     """
+    import torch
 
-    
-    # Step 1: Get the extrinsic matrix and expand for batch processing
-    extrinsic_matrix = camera.get_extrinsic_matrix()  # Shape (3, 4)
-    extrinsic_matrix = extrinsic_matrix.unsqueeze(0).expand(-1, points_3d.shape[1], -1, -1) # shape (N, P, 3, 4)
-    # Convert points to homogeneous coordinates by adding a fourth dimension of ones
-    ones = torch.ones((*points_3d.shape[:2], 1))  # Shape (N, P, 1)
-    points_3d_h = torch.cat([points_3d, ones], dim=-1)  # Shape (N, P, 4)
-    # Transform to camera coordinates using the extrinsic matrix
-    points_camera = batch_multiply(extrinsic_matrix.view(-1, 3, 4), points_3d_h.view(-1, 4))
-    # Step 2: Get the intrinsic matrix and apply it for projection
-    intrinsic_matrix = camera.get_intrinsic_matrix()  # Shape (N, 3, 3)
-    intrinsic_matrix = intrinsic_matrix.unsqueeze(0).expand(-1, points_3d.shape[1], -1, -1) # shape (N, P, 3, 4)    
-    # Project onto the image plane by applying the intrinsic matrix
-    points_image_h = batch_multiply(intrinsic_matrix.view(-1, 3, 3), points_camera.view(-1, 3))
-    points_image_h = points_image_h.view(points_3d.shape[0], points_3d.shape[1], 3)  # Shape (N, P, 3)
-    # Normalize by the z-coordinate to get 2D image coordinates
-    x = points_image_h[..., 0] / points_image_h[..., 2]
-    y = points_image_h[..., 1] / points_image_h[..., 2]
-    points25 = torch.stack((x,y, points_image_h[..., 2]), dim=-1)
-    return points25
+    # === Force all inputs to float32 ===
+    target_dtype = torch.float32
+
+    # Convert points
+    if isinstance(points_3d, torch.Tensor):
+        points_3d = points_3d.to(target_dtype)
+
+    # Convert camera matrices
+    extrinsic_matrix = camera.get_extrinsic_matrix()
+    intrinsic_matrix = camera.get_intrinsic_matrix()
+
+    if isinstance(extrinsic_matrix, torch.Tensor):
+        extrinsic_matrix = extrinsic_matrix.to(target_dtype)
+    if isinstance(intrinsic_matrix, torch.Tensor):
+        intrinsic_matrix = intrinsic_matrix.to(target_dtype)
+
+    # === Shape normalization ===
+    if extrinsic_matrix.ndim == 2:  # (3,4)
+        extrinsic_matrix = extrinsic_matrix.unsqueeze(0)
+    if intrinsic_matrix.ndim == 2:  # (3,3)
+        intrinsic_matrix = intrinsic_matrix.unsqueeze(0)
+
+    if extrinsic_matrix.shape[0] < points_3d.shape[0]:
+        extrinsic_matrix = extrinsic_matrix.expand(points_3d.shape[0], -1, -1)
+    if intrinsic_matrix.shape[0] < points_3d.shape[0]:
+        intrinsic_matrix = intrinsic_matrix.expand(points_3d.shape[0], -1, -1)
+
+    # === World → Camera ===
+    ones = torch.ones((*points_3d.shape[:2], 1), dtype=target_dtype, device=points_3d.device)
+    points_3d_h = torch.cat([points_3d, ones], dim=-1)  # (N, P, 4)
+
+    points_camera = torch.bmm(points_3d_h, extrinsic_matrix.transpose(1, 2))  # (N, P, 3)
+
+    # === Apply intrinsics ===
+    points_image_h = torch.bmm(points_camera, intrinsic_matrix.transpose(1, 2))  # (N, P, 3)
+    z = points_image_h[..., 2:3].clone()
+    x = points_image_h[..., 0:1] / (z + 1e-8)
+    y = points_image_h[..., 1:2] / (z + 1e-8)
+
+    if return_depth:
+        points_2d = torch.cat([x, y, z], dim=-1)
+    else:
+        points_2d = torch.cat([x, y], dim=-1)
+
+    # === Ensure output is float32 ===
+    points_2d = points_2d.to(torch.float32)
+    return points_2d
+
 
 def unproject_points_cam(camera, points_25d):
     """

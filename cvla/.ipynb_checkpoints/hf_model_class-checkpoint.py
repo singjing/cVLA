@@ -62,14 +62,17 @@ class cVLA_wrapped:
             self.conditioning = args.get("conditioning", None)
         else:
             args = None
+            
             self.conditioning = "text"
+            
 
         if self.conditioning == "trajectory":
-            action_enoder = args.get("action_encoder", "xyzrotvec-cam-1024xy")
+            action_enoder = args.get("action_encoder", "xyzrotvec-cam-512xy")
             enc_model = getActionEncInstance(action_enoder)
             self.depth_on_query = args.get("depth", False)
             self.depth_on_both = args.get("depth_on_both", False)
             return_depth = self.depth_on_query or self.depth_on_both
+            
         else:
             try:
                 with open(info_file, "r") as f:
@@ -82,15 +85,13 @@ class cVLA_wrapped:
                 action_enoder = model_info["action_encoder"]
                 enc_model = getActionEncInstance(action_enoder)
             else:
-                print("Warning: loading default encoder: xyzrotvec-cam-1024xy")
-                enc_model = getActionEncInstance("xyzrotvec-cam-1024xy")
+                print("Warning: loading default encoder: xyzrotvec-cam-512xy")
+                enc_model = getActionEncInstance("xyzrotvec-cam-512xy")
                 return_depth = False
                 if "_depth" in str(model_path):
                     return_depth = True
 
-            
         self.model_path = model_path
-
         self.load_model(model_path, return_depth)
         self.enc_model = enc_model
         self.model_path = model_path
@@ -155,7 +156,7 @@ class cVLA_wrapped:
                     return_tensors="pt",
                     padding="longest",
 
-                ).to(TORCH_DTYPE).to(DEVICE)
+                ).to(TORCH_DTYPE)
 
                 return inputs
         else:
@@ -216,6 +217,8 @@ class cVLA_wrapped:
         max_new_tokens = 13
         if self.conditioning == "trajectory":
             batch = self.get_trajectory_inputs(images, prefix)
+            #without depth
+            
             if self.return_depth:
                 if batch is not None:
                     images, entries, depths = batch[0]
@@ -227,6 +230,7 @@ class cVLA_wrapped:
                         depth = np.clip((depth * 255).round(), 0, 255).astype(np.uint8)
                         new_depths.append(depth)
                     batch = [(images, entries, new_depths)]
+            
             
         else:
             entry_dict = dict(prefix=prefix)
@@ -240,6 +244,7 @@ class cVLA_wrapped:
                 images = (depth, image)
             else:
                 images = images
+            
             #print(image.shape, depth.shape)
             batch = [(images, entry_dict)]  # batch size of 1
 

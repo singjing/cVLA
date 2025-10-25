@@ -14,6 +14,10 @@ from cvla.utils_trajectory import DummyCamera
 from cvla.utils_traj_tokens import to_prefix_suffix
 from cvla.utils_traj_tokens import getActionEncInstance
 from cvla.data_augmentations import depth_to_color
+from scipy.spatial.transform import Rotation as R
+
+
+
 
 
 class H5Dataset(Dataset):
@@ -104,17 +108,7 @@ class H5Dataset(Dataset):
             top = sensor_data["top_camera/rgb"][0]
         else:
             top = None
-        '''
-        #resize the image
-        target_size = (512, 512)
-        image = cv2.resize(image, target_size, interpolation=cv2.INTER_AREA)
-        if top is not None:
-            top = cv2.resize(top, target_size, interpolation=cv2.INTER_AREA)
 
-        # 🔽 更新 camera 的分辨率（关键）
-        #camera = DummyCamera(camera_intrinsic, camera_extrinsic, *target_size)
-
-        '''
         width, height, c = image.shape
         camera = DummyCamera(camera_intrinsic, camera_extrinsic, width, height)
 
@@ -167,9 +161,24 @@ class H5Dataset(Dataset):
             else:
                 depth = depth[:, :, 0] # depth im [mm]
             
-            return [image, depth],  entry
+            #return [image, depth],  entry
+            # ✅ 计算 rotation_labels 并加入 entry
+        try:
+            label = entry["suffix"]
+            camera = entry["camera"]
+            _, quat = self.action_encoder.decode_caption(label, camera=camera)
+            rotvec = torch.tensor(
+                R.from_quat(quat[0].numpy(), scalar_first=True).as_rotvec(),
+                dtype=torch.float32,
+            )
+            entry["rotation_labels"] = rotvec
+        except Exception as e:
+            print(f"[WARN] Sample {idx}: rotation decode failed ({e})")
+            entry["rotation_labels"] = torch.zeros(3, dtype=torch.float32)
 
-            #return [image, top], entry
+        # 返回图像与 entry
+        return [image, top], entry
+            
         
-        return image, entry
+        #return image, entry
         
